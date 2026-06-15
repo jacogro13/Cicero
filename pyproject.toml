@@ -10,10 +10,24 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "httpx2>=2.4",
+    "import-linter>=2.11",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# Architecture fitness function for the hexagonal layering of ADR-001:
+# inner layers must never import outer ones. Only the layers that currently
+# exist are listed; the forbidden set grows as `services/` and `adapters/`
+# are introduced in later batches.
+[tool.importlinter]
+root_package = "pagemaster"
+
+[[tool.importlinter.contracts]]
+name = "Inner layers do not import outer layers"
+type = "forbidden"
+source_modules = ["pagemaster.domain"]
+forbidden_modules = ["pagemaster.entrypoints"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

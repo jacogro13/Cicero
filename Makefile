@@ -1,7 +1,10 @@
-.PHONY: sync test dev
+.PHONY: sync lint test dev
 
 sync:                 ## Install dependencies into the uv venv
 	uv sync
+
+lint:                 ## Check the hexagonal layering (import-linter, ADR-001)
+	uv run lint-imports
 
 test:                 ## Run the test suite
 	uv run pytest

@@ -20,5 +20,8 @@ jobs:
       - name: Install dependencies
         run: make sync
 
+      - name: Check architecture (import-linter)
+        run: make lint
+
       - name: Run tests
         run: make test
