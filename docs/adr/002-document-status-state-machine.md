@@ -30,9 +30,14 @@ these rules: every status change should go through it.
 
 Model the lifecycle as four states in a `DocumentStatus` enum:
 
-```
-UPLOADED → PROCESSING → READY
-UPLOADED → PROCESSING → FAILED
+```mermaid
+stateDiagram-v2
+    [*] --> UPLOADED
+    UPLOADED --> PROCESSING: mark_processing()
+    PROCESSING --> READY: mark_ready(content_key)
+    PROCESSING --> FAILED: mark_failed()
+    READY --> [*]
+    FAILED --> [*]
 ```
 
 A new document starts in `UPLOADED`. Status transitions are encapsulated in

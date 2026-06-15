@@ -13,11 +13,10 @@ PageMaster extracts their text and uses it as raw material to generate concise
 summaries — per chapter for a book, or a single summary for an article — and
 those summaries are what you read in the app (or chat with the document about;
 articles can also be turned into a podcast). The extracted text itself is never
-displayed; to
-read a source in full you open the original PDF or link. It runs end to end from
-`docker compose up` with no external services: the database and object storage
-are local containers, and the AI features use mock adapters unless a real
-OpenAI-compatible endpoint is configured.
+displayed; to read a source in full you open the original PDF or link. It runs
+end to end from `docker compose up` with no external services: the database and
+object storage are local containers, and the AI features use mock adapters
+unless a real OpenAI-compatible endpoint is configured.
 
 ## Layering
 
@@ -25,6 +24,27 @@ The backend is **ports-and-adapters / DDD**, dependencies pointing inward —
 `domain ← services ← adapters / entrypoints` — with the rule enforced in CI by
 import-linter. See **[ADR-001](adr/001-hexagonal-ddd-layering.md)** for the full
 rationale and the `src/pagemaster/` layout.
+
+```mermaid
+flowchart LR
+    entrypoints["entrypoints<br/>FastAPI · wiring"]
+    adapters["adapters<br/>DB · storage · LLM"]
+    services["services<br/>use cases"]
+    domain["domain<br/>entities · ports"]
+
+    entrypoints --> services
+    entrypoints --> adapters
+    entrypoints --> domain
+    services --> domain
+    adapters --> domain
+
+    classDef planned stroke-dasharray:5 5,fill:#f6f6f6,color:#555;
+    class services,adapters planned
+```
+
+Arrows mean *imports / depends on*; the rule is **outer → inner only** (`domain`
+depends on nothing), enforced in CI by import-linter. Dashed nodes are
+**Planned** — not built yet.
 
 | Layer | Responsibility | Status |
 |-------|----------------|--------|
@@ -41,6 +61,16 @@ entity methods, not a free `status` setter. The `content_key` (an opaque locator
 for the document's extracted text — internal raw material for summaries, not
 shown to the reader) is set atomically when a document becomes READY. See
 **[ADR-002](adr/002-document-status-state-machine.md)**.
+
+```mermaid
+stateDiagram-v2
+    [*] --> UPLOADED
+    UPLOADED --> PROCESSING: mark_processing()
+    PROCESSING --> READY: mark_ready(content_key)
+    PROCESSING --> FAILED: mark_failed()
+    READY --> [*]
+    FAILED --> [*]
+```
 
 ## Planned capabilities
 
