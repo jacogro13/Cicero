@@ -4,6 +4,7 @@ import pytest
 
 from pagemaster.domain.document.document import Document
 from pagemaster.domain.document.document_id import DocumentId
+from pagemaster.domain.document.document_status import DocumentStatus
 
 
 class TestDocumentCreate:
@@ -28,3 +29,36 @@ class TestDocumentCreate:
     def test_whitespace_only_title_is_rejected(self):
         with pytest.raises(ValueError):
             Document.create("   ")
+
+
+class TestDocumentStatusLifecycle:
+    def test_new_document_starts_uploaded(self):
+        doc = Document.create("Any Title")
+        assert doc.status is DocumentStatus.UPLOADED
+
+    def test_new_document_has_no_content_key(self):
+        doc = Document.create("Any Title")
+        assert doc.content_key is None
+
+    def test_mark_processing_transitions_to_processing(self):
+        doc = Document.create("Any Title")
+        doc.mark_processing()
+        assert doc.status is DocumentStatus.PROCESSING
+
+    def test_mark_ready_transitions_to_ready(self):
+        doc = Document.create("Any Title")
+        doc.mark_processing()
+        doc.mark_ready("documents/abc/content.md")
+        assert doc.status is DocumentStatus.READY
+
+    def test_mark_ready_sets_the_content_key(self):
+        doc = Document.create("Any Title")
+        doc.mark_processing()
+        doc.mark_ready("documents/abc/content.md")
+        assert doc.content_key == "documents/abc/content.md"
+
+    def test_mark_failed_transitions_to_failed(self):
+        doc = Document.create("Any Title")
+        doc.mark_processing()
+        doc.mark_failed()
+        assert doc.status is DocumentStatus.FAILED
