@@ -48,7 +48,7 @@ depends on nothing), enforced in CI by import-linter. Dashed nodes are
 
 | Layer | Responsibility | Status |
 |-------|----------------|--------|
-| `domain/` | Entities, value objects, ports — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`) |
+| `domain/` | Entities, value objects, ports — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; ports `DocumentRepository`, `UnitOfWork`) |
 | `services/` | One use-case class per command; owns its Unit-of-Work transaction | **Planned** |
 | `adapters/` | Implements domain ports against real infra (DB, object storage, LLM) | **Planned** |
 | `entrypoints/` | FastAPI app, routes, schemas, wiring | **Exists** (`GET /health`) |
@@ -72,13 +72,41 @@ stateDiagram-v2
     FAILED --> [*]
 ```
 
+## Persistence: repositories and the Unit of Work
+
+Persistence is reached through two domain **ports** (abstract interfaces; the
+concrete adapters that implement them live outside the domain). A **repository**
+is the collection for one *aggregate* — `DocumentRepository` (`save`,
+`find_by_id`) for `Document`, under `domain/document/ports/`. The **`UnitOfWork`**
+(under `domain/ports/`) is the transaction *scope*: an async context manager that
+exposes one repository per aggregate (`uow.documents`, later `uow.notes` / …), so
+a single block commits across all of them atomically. **Commit is explicit; any
+other exit rolls back.** Services receive a `uow_factory` — a zero-arg callable
+returning a fresh, unentered UoW — never a raw session. Today only an in-memory
+implementation exists (a test double); real Postgres lands behind the *same*
+ports later, with the save-and-fetch behaviour unchanged. See
+**[ADR-003](adr/003-unit-of-work-and-repository-ports.md)**.
+
+```mermaid
+sequenceDiagram
+    participant S as Service / caller
+    participant U as UnitOfWork
+    participant R as DocumentRepository
+    S->>U: async with uow_factory() as uow
+    S->>R: await uow.documents.save(doc)
+    S->>U: await uow.commit()
+    U-->>S: exit block (rollback if not committed)
+```
+
 ## Planned capabilities
 
 Each of these is a committed direction; its design decision is recorded in an ADR
 when the slice is built test-first (so the ADR reflects real, validated code):
 
-- **Persistence** — document metadata (including `content_key`) in Postgres.
-  _ADR to follow with the persistence slice._
+- **Persistence** — the repository + Unit-of-Work *ports* exist (see above), with
+  an in-memory implementation; what remains is the real **Postgres** adapter for
+  document metadata (including `content_key`) behind those same ports.
+  _Adapter ADR to follow with the Postgres slice._
 - **Content storage** — the extracted content bytes in object storage (Garage
   S3), keyed by `content_key`; the database stores metadata and the key, not the
   blob. _Why object storage over the database, and the key scheme: ADR to follow
@@ -105,6 +133,9 @@ the code on purpose. Implemented so far:
 - `GET /health` and the app/CI spine.
 - The `Document` aggregate: a generated `DocumentId`, a validated title, and the
   status state machine.
+- The persistence **ports** (`DocumentRepository`, `UnitOfWork`) with an
+  in-memory implementation — save a document and fetch it back, with the
+  Unit of Work as the transaction boundary.
 
 Everything under **Planned** above is direction, not code, yet.
 
@@ -115,3 +146,4 @@ references a decision made later.
 
 - [ADR-001 — Hexagonal / DDD layering with a src-layout](adr/001-hexagonal-ddd-layering.md)
 - [ADR-002 — Document status as a guarded state machine](adr/002-document-status-state-machine.md)
+- [ADR-003 — Unit of Work and repository ports](adr/003-unit-of-work-and-repository-ports.md)
