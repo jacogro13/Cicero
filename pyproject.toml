@@ -9,12 +9,16 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pytest-asyncio>=0.23",
     "httpx2>=2.4",
     "import-linter>=2.11",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Repositories and the Unit of Work are async ports; `auto` lets async test
+# functions run without a per-test marker.
+asyncio_mode = "auto"
 
 # Architecture fitness function for the hexagonal layering of ADR-001:
 # inner layers must never import outer ones. Only the layers that currently
