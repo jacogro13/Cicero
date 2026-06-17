@@ -13,8 +13,7 @@ import pytest
 from pagemaster.domain.document.document_status import DocumentStatus
 from pagemaster.services.document.upload_document import UploadDocument
 
-from tests.fakes import make_in_memory_uow_factory
-from tests.fakes.storage import InMemoryDocumentStorage
+from tests.fakes import InMemoryDocumentStorage, make_in_memory_uow_factory
 
 
 class _ExplodingStorage(InMemoryDocumentStorage):

@@ -30,6 +30,16 @@ class Document:
             raise ValueError("title must not be empty")
         return cls(id=DocumentId.new(), title=title)
 
+    @property
+    def source_key(self) -> str:
+        """Storage key for the original source file (ADR-004).
+
+        A pure function of the document's identity, so anything that needs the
+        file derives the same key. Distinct from :attr:`content_key`, which
+        locates the *extracted* text and is set only when the document is READY.
+        """
+        return f"documents/{self.id.value}/source"
+
     def mark_processing(self) -> None:
         self.status = DocumentStatus.PROCESSING
 
