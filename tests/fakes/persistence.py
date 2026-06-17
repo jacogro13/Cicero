@@ -31,6 +31,9 @@ class InMemoryDocumentRepository(DocumentRepository):
             return self._pending[document_id]
         return self._store.get(document_id)
 
+    async def find_all(self) -> list[Document]:
+        return list({**self._store, **self._pending}.values())
+
     def flush(self) -> None:
         self._store.update(self._pending)
         self._pending.clear()

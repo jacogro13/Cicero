@@ -8,7 +8,7 @@ class DocumentRepository(ABC):
     """Port: the collection of ``Document`` aggregates (ADR-003).
 
     Reached through a :class:`UnitOfWork` (``uow.documents``), never constructed
-    directly. ``find_all`` / ``delete`` arrive in the batches that need them.
+    directly. ``delete`` arrives in the batch that needs it.
     """
 
     @abstractmethod
@@ -19,4 +19,9 @@ class DocumentRepository(ABC):
     @abstractmethod
     async def find_by_id(self, document_id: DocumentId) -> Document | None:
         """Return the document with the given id, or ``None`` if absent."""
+        ...
+
+    @abstractmethod
+    async def find_all(self) -> list[Document]:
+        """Return all documents (empty list if none)."""
         ...
