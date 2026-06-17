@@ -23,10 +23,11 @@ testpaths = ["tests"]
 # functions run without a per-test marker.
 asyncio_mode = "auto"
 
-# Architecture fitness function for the hexagonal layering of ADR-001/004:
+# Architecture fitness function for the hexagonal layering of ADR-001/004/006:
 # outer layers may import inner ones, never the reverse. Layers are listed
-# high-to-low; `adapters/` joins the chain when it is introduced in a later
-# batch.
+# high-to-low; `services` and `adapters` are independent siblings (both depend
+# only inward on `domain`, neither imports the other — composition is wired in
+# `entrypoints`).
 [tool.importlinter]
 root_package = "pagemaster"
 
@@ -35,7 +36,7 @@ name = "Hexagonal layering: outer imports inner only"
 type = "layers"
 layers = [
     "pagemaster.entrypoints",
-    "pagemaster.services",
+    "pagemaster.services | pagemaster.adapters",
     "pagemaster.domain",
 ]
 
