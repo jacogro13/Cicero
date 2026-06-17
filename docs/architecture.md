@@ -47,7 +47,7 @@ Arrows are *imports*; dashed nodes are **Planned** (not built yet).
 | Layer | Responsibility | Status |
 |-------|----------------|--------|
 | `domain/` | Entities, value objects, ports — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`) |
-| `services/` | One use-case class per command; owns its Unit-of-Work transaction | **Exists** (`UploadDocument`) |
+| `services/` | One use-case class per command; owns its Unit-of-Work transaction | **Exists** (`UploadDocument`, `ListDocuments`) |
 | `adapters/` | Implements domain ports against real infra (DB, object storage, LLM) | **Planned** |
 | `entrypoints/` | FastAPI app, routes, schemas, wiring | **Exists** (`GET /health`) |
 
@@ -75,7 +75,7 @@ stateDiagram-v2
 Persistence is reached through two domain **ports** (abstract interfaces; the
 concrete adapters that implement them live outside the domain). A **repository**
 is the collection for one *aggregate* — `DocumentRepository` (`save`,
-`find_by_id`) for `Document`, under `domain/document/ports/`. The **`UnitOfWork`**
+`find_by_id`, `find_all`) for `Document`, under `domain/document/ports/`. The **`UnitOfWork`**
 (under `domain/ports/`) is the transaction *scope*: an async context manager that
 exposes one repository per aggregate (`uow.documents`, later `uow.notes` / …), so
 a single block commits across all of them atomically. **Commit is explicit; any
@@ -162,9 +162,11 @@ the code on purpose. Implemented so far:
 - The persistence **ports** (`DocumentRepository`, `UnitOfWork`) with an
   in-memory implementation — save a document and fetch it back, with the
   Unit of Work as the transaction boundary.
-- The first use case, **`UploadDocument`** (the `services/` layer), over a
+- The first use cases (the `services/` layer): **`UploadDocument`**, over a
   `DocumentStorage` port — stores the source file (in-memory adapter) then
-  persists the document, file-first so a failure can only orphan a blob.
+  persists the document, file-first so a failure can only orphan a blob — and
+  **`ListDocuments`**, a read returning every stored document via
+  `DocumentRepository.find_all`.
 
 Everything under **Planned** above is direction, not code, yet.
 
