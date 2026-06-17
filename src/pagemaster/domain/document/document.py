@@ -18,10 +18,8 @@ class Document:
     id: DocumentId
     title: str
     status: DocumentStatus = DocumentStatus.UPLOADED
-    #: Opaque locator for the document's extracted text — the internal raw
-    #: material used to generate AI summaries, never shown to the user directly.
-    #: ``None`` until the document is READY; set atomically with the status by
-    #: :meth:`mark_ready`.
+    #: Locator for the extracted text (internal, never shown to the reader);
+    #: ``None`` until set with the status by :meth:`mark_ready` (ADR-002).
     content_key: str | None = None
 
     @classmethod
@@ -32,12 +30,8 @@ class Document:
 
     @property
     def source_key(self) -> str:
-        """Storage key for the original source file (ADR-004).
-
-        A pure function of the document's identity, so anything that needs the
-        file derives the same key. Distinct from :attr:`content_key`, which
-        locates the *extracted* text and is set only when the document is READY.
-        """
+        """Storage key for the original source file, derived from identity
+        (ADR-004). Distinct from :attr:`content_key` (the extracted text)."""
         return f"documents/{self.id.value}/source"
 
     def mark_processing(self) -> None:

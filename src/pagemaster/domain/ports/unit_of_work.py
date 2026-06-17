@@ -9,15 +9,11 @@ from pagemaster.domain.document.ports.document_repository import DocumentReposit
 
 
 class UnitOfWork(ABC):
-    """Port: the transactional boundary for the application (ADR-003).
+    """Port: the transaction boundary (ADR-003).
 
-    The Unit of Work is the *transaction scope*, not an aggregate's collection:
-    it exposes one repository per aggregate as an attribute (``uow.documents``,
-    and later ``uow.notes`` / ``uow.chat`` as those aggregates land) so a single
-    ``async with uow:`` block can commit changes across several aggregates
-    together. Each block is one transaction — durable on normal exit after
-    :meth:`commit`, rolled back otherwise. Concrete implementations live in the
-    outer layers.
+    An async context manager exposing one repository per aggregate
+    (``uow.documents``, later ``uow.notes`` / …) so one block commits across all
+    of them atomically. Commit is explicit; any other exit rolls back.
     """
 
     documents: DocumentRepository
@@ -41,9 +37,8 @@ class UnitOfWork(ABC):
 
 
 UnitOfWorkFactory = Callable[[], UnitOfWork]
-"""A zero-arg callable returning a fresh, *unentered* ``UnitOfWork``.
+"""Zero-arg callable returning a fresh, *unentered* :class:`UnitOfWork`.
 
-Services accept the factory (not a single instance) so one use case can open
-multiple sequential transactions — e.g. a background job that needs the upload
-transaction to commit before its first read.
+Services take the factory (not an instance) so one use case can open several
+sequential transactions.
 """

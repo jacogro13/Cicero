@@ -1,11 +1,7 @@
-"""In-memory test doubles for the document persistence ports.
+"""In-memory ``DocumentRepository`` / ``UnitOfWork`` doubles for unit tests.
 
-These fakes let unit tests exercise the ``DocumentRepository`` /
-``UnitOfWork`` contract with no real database. Writes are buffered in
-the Unit of Work and flushed to a shared in-memory store on ``commit``; an exit
-without ``commit`` rolls back. So the fakes honour the transaction boundary —
-uncommitted writes are invisible to other transactions. Batch #7 swaps in a
-real Postgres adapter behind the same ports, leaving this behaviour unchanged.
+Writes buffer in the UoW and flush to a shared store on commit, so uncommitted
+work stays invisible to other transactions (the real behaviour, ADR-003).
 """
 
 from __future__ import annotations
@@ -20,12 +16,8 @@ from pagemaster.domain.ports.unit_of_work import UnitOfWork, UnitOfWorkFactory
 
 
 class InMemoryDocumentRepository(DocumentRepository):
-    """Backed by a shared ``store`` dict, with a per-transaction write buffer.
-
-    ``save`` stages into the buffer; ``find_by_id`` reads the buffer first
-    (read-your-writes) then the committed store. The owning Unit of Work
-    flushes the buffer into the store on commit and discards it on rollback.
-    """
+    """Shared ``store`` dict + a per-transaction write buffer (read-your-writes);
+    the owning UoW flushes the buffer on commit and discards it on rollback."""
 
     def __init__(self, store: dict[DocumentId, Document]) -> None:
         self._store = store

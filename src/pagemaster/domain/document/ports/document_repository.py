@@ -5,13 +5,10 @@ from pagemaster.domain.document.document_id import DocumentId
 
 
 class DocumentRepository(ABC):
-    """Port: persistence operations for the ``Document`` aggregate (ADR-003).
+    """Port: the collection of ``Document`` aggregates (ADR-003).
 
-    A collection-like interface, not a database session: callers reach it
-    through a :class:`UnitOfWork` (``uow.documents``) and never
-    construct it directly. Concrete adapters (in-memory now, Postgres later)
-    implement it in the outer layers. ``find_all`` and ``delete`` are added in
-    the batches that need them.
+    Reached through a :class:`UnitOfWork` (``uow.documents``), never constructed
+    directly. ``find_all`` / ``delete`` arrive in the batches that need them.
     """
 
     @abstractmethod

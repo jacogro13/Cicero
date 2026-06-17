@@ -1,10 +1,7 @@
-"""Save & fetch a Document through the repository + Unit of Work ports.
+"""Save & fetch a Document through the repository + Unit of Work.
 
-Backlog #3: a document saved and committed in one transaction can be fetched
-by id in a later one; the Unit of Work is the transaction boundary, so writes
-that are not committed never become visible — whether the block simply forgot
-to commit or raised partway through. Exercised here against the in-memory
-fakes; Batch #7 re-runs this contract against real Postgres.
+A committed document is visible to a later transaction; any exit without a
+commit — a forgotten commit or an exception mid-block — discards the writes.
 """
 
 import pytest

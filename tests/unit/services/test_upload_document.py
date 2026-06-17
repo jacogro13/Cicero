@@ -1,11 +1,7 @@
-"""Upload a document → it's stored (backlog #4, ADR-004).
+"""Upload a document → it's stored (ADR-004).
 
-The ``UploadDocument`` use case has two effects that must be coordinated: it
-puts the source file in object storage and persists the document metadata in a
-Unit of Work. Storage comes first, so a failure mid-upload can leave at worst an
-orphaned blob, never a committed document whose file is missing. Exercised here
-against the in-memory fakes; Batch #7/#8 re-run the behaviour against real
-Postgres and object storage.
+``UploadDocument`` stores the source file then persists the metadata; storage
+goes first, so a failed upload can orphan a blob but never persist a document.
 """
 
 import pytest
