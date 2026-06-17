@@ -37,18 +37,16 @@ flowchart LR
     entrypoints --> domain
     services --> domain
     adapters --> domain
-
-    classDef planned stroke-dasharray:5 5,fill:#f6f6f6,color:#555;
-    class adapters planned
 ```
 
-Arrows are *imports*; dashed nodes are **Planned** (not built yet).
+Arrows are *imports*. `services` and `adapters` are independent siblings (neither
+imports the other); the rule is enforced in CI by import-linter.
 
 | Layer | Responsibility | Status |
 |-------|----------------|--------|
 | `domain/` | Entities, value objects, ports — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`) |
 | `services/` | One use-case class per command; owns its Unit-of-Work transaction | **Exists** (`UploadDocument`, `ListDocuments`) |
-| `adapters/` | Implements domain ports against real infra (DB, object storage, LLM) | **Planned** |
+| `adapters/` | Implements domain ports against real infra (DB, object storage, LLM) | **Exists** (`PostgresDocumentRepository`, `SqlAlchemyUnitOfWork`; object storage / LLM to come) |
 | `entrypoints/` | FastAPI app, routes, schemas, wiring | **Exists** (`GET /health`; `POST`/`GET /api/documents`) |
 
 ## Document lifecycle
@@ -80,10 +78,9 @@ is the collection for one *aggregate* — `DocumentRepository` (`save`,
 exposes one repository per aggregate (`uow.documents`, later `uow.notes` / …), so
 a single block commits across all of them atomically. **Commit is explicit; any
 other exit rolls back.** Services receive a `uow_factory` — a zero-arg callable
-returning a fresh, unentered UoW — never a raw session. Today only an in-memory
-implementation exists (a test double); real Postgres lands behind the *same*
-ports later, with the save-and-fetch behaviour unchanged. See
-**[ADR-003](adr/003-unit-of-work-and-repository-ports.md)**.
+returning a fresh, unentered UoW — never a raw session. An in-memory implementation
+backs unit tests; a **Postgres adapter** implements the same ports for real (below).
+See **[ADR-003](adr/003-unit-of-work-and-repository-ports.md)**.
 
 ```mermaid
 sequenceDiagram
@@ -95,6 +92,22 @@ sequenceDiagram
     S->>U: await uow.commit()
     U-->>S: exit block (rollback if not committed)
 ```
+
+## Persisting to Postgres
+
+The real implementation of those ports lives in the `adapters/` layer.
+`SqlAlchemyUnitOfWork` wraps an async `AsyncSession` — one `async with` block is one
+transaction, with the ADR-003 commit/rollback contract — and
+`PostgresDocumentRepository` is `uow.documents` over that session. The domain
+`Document` is persisted by **imperative mapping** declared entirely in the adapter
+(`orm.py`): the entity keeps zero ORM imports (ADR-001), and a `TypeDecorator`
+translates the `DocumentId` value object ↔ a UUID column. The adapter is verified
+against **real Postgres in a throwaway testcontainer** — the `tests/integration/`
+layer (`make integration`), re-running the ADR-003 save/fetch/rollback behaviours
+unchanged, so the database is a proven swappable adapter rather than a mock. Wiring
+the *running* app to Postgres (settings, engine lifespan, schema, a compose service)
+is a later slice; the in-memory fake still backs the fast unit/API suite. See
+**[ADR-006](adr/006-postgres-persistence-adapter.md)**.
 
 ## Uploading a document
 
@@ -157,10 +170,11 @@ sequenceDiagram
 Each of these is a committed direction; its design decision is recorded in an ADR
 when the slice is built test-first (so the ADR reflects real, validated code):
 
-- **Persistence** — the repository + Unit-of-Work *ports* exist (see above), with
-  an in-memory implementation; what remains is the real **Postgres** adapter for
-  document metadata (including `content_key`) behind those same ports.
-  _Adapter ADR to follow with the Postgres slice._
+- **Live persistence wiring** — the Postgres adapter exists and is proven (see
+  "Persisting to Postgres"); what remains is connecting it to the *running* app:
+  settings/`DATABASE_URL`, an engine lifespan, schema management, and a Postgres
+  service in the compose stack. Until then `get_uow_factory` stays a seam the API
+  tests override with the in-memory fake. _ADR to follow with that slice._
 - **Object storage** — the `DocumentStorage` *port* exists (in-memory, holding
   uploaded source files keyed by `source_key`); what remains is the real
   **S3-compatible** (Garage) adapter and storing the **extracted content** keyed
@@ -192,9 +206,10 @@ the code on purpose. Implemented so far:
   whose infra providers are overridden in tests until the real adapters land.
 - The `Document` aggregate: a generated `DocumentId`, a validated title, and the
   status state machine.
-- The persistence **ports** (`DocumentRepository`, `UnitOfWork`) with an
-  in-memory implementation — save a document and fetch it back, with the
-  Unit of Work as the transaction boundary.
+- The persistence **ports** (`DocumentRepository`, `UnitOfWork`) with two
+  implementations: the in-memory fake for unit tests, and a **Postgres adapter**
+  (`adapters/persistence/`, SQLAlchemy + imperative mapping) proven against a real
+  database in the `tests/integration/` layer (`make integration`).
 - The first use cases (the `services/` layer): **`UploadDocument`**, over a
   `DocumentStorage` port — stores the source file (in-memory adapter) then
   persists the document, file-first so a failure can only orphan a blob — and
@@ -213,3 +228,4 @@ references a decision made later.
 - [ADR-003 — Unit of Work and repository ports](adr/003-unit-of-work-and-repository-ports.md)
 - [ADR-004 — Object-storage port and the services layer](adr/004-object-storage-port-and-services-layer.md)
 - [ADR-005 — HTTP API routing, schemas, and the DI seam](adr/005-http-api-routing-schemas-and-di-seam.md)
+- [ADR-006 — Postgres persistence adapter (SQLAlchemy + testcontainers)](adr/006-postgres-persistence-adapter.md)
