@@ -39,17 +39,15 @@ flowchart LR
     adapters --> domain
 
     classDef planned stroke-dasharray:5 5,fill:#f6f6f6,color:#555;
-    class services,adapters planned
+    class adapters planned
 ```
 
-Arrows mean *imports / depends on*; the rule is **outer → inner only** (`domain`
-depends on nothing), enforced in CI by import-linter. Dashed nodes are
-**Planned** — not built yet.
+Arrows are *imports*; dashed nodes are **Planned** (not built yet).
 
 | Layer | Responsibility | Status |
 |-------|----------------|--------|
-| `domain/` | Entities, value objects, ports — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; ports `DocumentRepository`, `UnitOfWork`) |
-| `services/` | One use-case class per command; owns its Unit-of-Work transaction | **Planned** |
+| `domain/` | Entities, value objects, ports — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`) |
+| `services/` | One use-case class per command; owns its Unit-of-Work transaction | **Exists** (`UploadDocument`) |
 | `adapters/` | Implements domain ports against real infra (DB, object storage, LLM) | **Planned** |
 | `entrypoints/` | FastAPI app, routes, schemas, wiring | **Exists** (`GET /health`) |
 
@@ -57,9 +55,9 @@ depends on nothing), enforced in CI by import-linter. Dashed nodes are
 
 `Document` is the aggregate root. Its status is a guarded state machine —
 `UPLOADED → PROCESSING → READY | FAILED` — with transitions encapsulated as
-entity methods, not a free `status` setter. The `content_key` (an opaque locator
-for the document's extracted text — internal raw material for summaries, not
-shown to the reader) is set atomically when a document becomes READY. See
+entity methods, not a free `status` setter. The `content_key` (an opaque locator for
+the internal extracted text, never shown to the reader) is set atomically when a
+document becomes READY. See
 **[ADR-002](adr/002-document-status-state-machine.md)**.
 
 ```mermaid
@@ -98,6 +96,33 @@ sequenceDiagram
     U-->>S: exit block (rollback if not committed)
 ```
 
+## Uploading a document
+
+The first use case lives in the `services/` layer. **`UploadDocument`** takes a
+title and the source file's bytes; it stores the file first, then commits the
+metadata in a Unit of Work — the deliberate ordering ADR-004 explains. The file's
+location is `Document.source_key` (`documents/{id}/source`), a pure function of
+identity, distinct from `content_key` (the extracted text). Storage is reached
+through a third domain port, **`DocumentStorage`** (`domain/document/ports/`,
+`put` for now), in-memory today and an S3-compatible adapter later. Dependencies
+(`uow_factory`, `storage`) arrive as constructor parameters; upload leaves the
+document `UPLOADED`. See
+**[ADR-004](adr/004-object-storage-port-and-services-layer.md)**.
+
+```mermaid
+sequenceDiagram
+    participant C as Caller (route, test, …)
+    participant U as UploadDocument
+    participant S as DocumentStorage
+    participant W as UnitOfWork
+    C->>U: await execute(title, content)
+    U->>U: doc = Document.create(title)
+    U->>S: await storage.put(doc.source_key, content)
+    U->>W: async with uow_factory() as uow
+    U->>W: await uow.documents.save(doc); await uow.commit()
+    U-->>C: return doc
+```
+
 ## Planned capabilities
 
 Each of these is a committed direction; its design decision is recorded in an ADR
@@ -107,10 +132,11 @@ when the slice is built test-first (so the ADR reflects real, validated code):
   an in-memory implementation; what remains is the real **Postgres** adapter for
   document metadata (including `content_key`) behind those same ports.
   _Adapter ADR to follow with the Postgres slice._
-- **Content storage** — the extracted content bytes in object storage (Garage
-  S3), keyed by `content_key`; the database stores metadata and the key, not the
-  blob. _Why object storage over the database, and the key scheme: ADR to follow
-  with the storage slice._
+- **Object storage** — the `DocumentStorage` *port* exists (in-memory, holding
+  uploaded source files keyed by `source_key`); what remains is the real
+  **S3-compatible** (Garage) adapter and storing the **extracted content** keyed
+  by `content_key` — the database keeps metadata and keys, never blobs.
+  _Adapter ADR to follow with the storage slice._
 - **Extraction** — turn a source into Markdown text: PDFs in-process via
   PyMuPDF, URLs via trafilatura/Playwright. This text is internal — the input to
   summarization, never shown to the user. Drives `PROCESSING → READY/FAILED`.
@@ -136,6 +162,9 @@ the code on purpose. Implemented so far:
 - The persistence **ports** (`DocumentRepository`, `UnitOfWork`) with an
   in-memory implementation — save a document and fetch it back, with the
   Unit of Work as the transaction boundary.
+- The first use case, **`UploadDocument`** (the `services/` layer), over a
+  `DocumentStorage` port — stores the source file (in-memory adapter) then
+  persists the document, file-first so a failure can only orphan a blob.
 
 Everything under **Planned** above is direction, not code, yet.
 
@@ -147,3 +176,4 @@ references a decision made later.
 - [ADR-001 — Hexagonal / DDD layering with a src-layout](adr/001-hexagonal-ddd-layering.md)
 - [ADR-002 — Document status as a guarded state machine](adr/002-document-status-state-machine.md)
 - [ADR-003 — Unit of Work and repository ports](adr/003-unit-of-work-and-repository-ports.md)
+- [ADR-004 — Object-storage port and the services layer](adr/004-object-storage-port-and-services-layer.md)
