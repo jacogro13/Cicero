@@ -47,7 +47,8 @@ sequenceDiagram
     U->>U: doc = Document.create(title)
     U->>S: await storage.put(doc.source_key, content)
     U->>W: async with uow_factory() as uow
-    U->>W: await uow.documents.save(doc); await uow.commit()
+    U->>W: await uow.documents.save(doc)
+    U->>W: await uow.commit()
     U-->>C: return doc
 ```
 

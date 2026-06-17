@@ -49,7 +49,7 @@ Arrows are *imports*; dashed nodes are **Planned** (not built yet).
 | `domain/` | Entities, value objects, ports — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`) |
 | `services/` | One use-case class per command; owns its Unit-of-Work transaction | **Exists** (`UploadDocument`, `ListDocuments`) |
 | `adapters/` | Implements domain ports against real infra (DB, object storage, LLM) | **Planned** |
-| `entrypoints/` | FastAPI app, routes, schemas, wiring | **Exists** (`GET /health`) |
+| `entrypoints/` | FastAPI app, routes, schemas, wiring | **Exists** (`GET /health`; `POST`/`GET /api/documents`) |
 
 ## Document lifecycle
 
@@ -119,8 +119,37 @@ sequenceDiagram
     U->>U: doc = Document.create(title)
     U->>S: await storage.put(doc.source_key, content)
     U->>W: async with uow_factory() as uow
-    U->>W: await uow.documents.save(doc); await uow.commit()
+    U->>W: await uow.documents.save(doc)
+    U->>W: await uow.commit()
     U-->>C: return doc
+```
+
+## Exposing the use cases over HTTP
+
+The `entrypoints/` layer puts the use cases on the wire. Routes live in an
+`APIRouter` mounted under `/api` — `POST /api/documents` (a `multipart` `title` +
+file upload) and `GET /api/documents` (the library list); `/health` stays
+unprefixed. Each route is thin: parse the request, call the use case, map the
+result to a **`DocumentResponse`** (`id`, `title`, `status`) — the wire shape that
+deliberately omits the internal storage keys and extracted text. Use cases are
+assembled in `dependencies.py` and injected with `Depends`; the leaf infra
+providers (`uow_factory`, `storage`) are the swap point — they raise until a real
+adapter lands, and tests override them with the in-memory fakes through FastAPI's
+`dependency_overrides`, so the routes are verified with no infrastructure. See
+**[ADR-005](adr/005-http-api-routing-schemas-and-di-seam.md)**.
+
+```mermaid
+sequenceDiagram
+    participant C as HTTP client
+    participant R as Route /api/documents
+    participant D as dependencies.py
+    participant U as UploadDocument
+    C->>R: POST multipart (title, file)
+    R->>D: Depends(get_upload_document)
+    D-->>R: UploadDocument(uow_factory, storage)
+    R->>U: await execute(title, content)
+    U-->>R: Document
+    R-->>C: 201 DocumentResponse (id, title, status)
 ```
 
 ## Planned capabilities
@@ -157,6 +186,10 @@ The repository is built incrementally and test-first, so this map runs ahead of
 the code on purpose. Implemented so far:
 
 - `GET /health` and the app/CI spine.
+- The HTTP API (the `entrypoints/` layer): `POST /api/documents` (multipart
+  upload) and `GET /api/documents` (list), mapping the domain to a
+  `DocumentResponse` and wiring the use cases through a dependency-injection seam
+  whose infra providers are overridden in tests until the real adapters land.
 - The `Document` aggregate: a generated `DocumentId`, a validated title, and the
   status state machine.
 - The persistence **ports** (`DocumentRepository`, `UnitOfWork`) with an
@@ -179,3 +212,4 @@ references a decision made later.
 - [ADR-002 — Document status as a guarded state machine](adr/002-document-status-state-machine.md)
 - [ADR-003 — Unit of Work and repository ports](adr/003-unit-of-work-and-repository-ports.md)
 - [ADR-004 — Object-storage port and the services layer](adr/004-object-storage-port-and-services-layer.md)
+- [ADR-005 — HTTP API routing, schemas, and the DI seam](adr/005-http-api-routing-schemas-and-di-seam.md)
