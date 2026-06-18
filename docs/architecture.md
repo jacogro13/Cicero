@@ -46,7 +46,7 @@ imports the other); the rule is enforced in CI by import-linter.
 |-------|----------------|--------|
 | `domain/` | Entities, value objects, ports — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`) |
 | `services/` | One use-case class per command; owns its Unit-of-Work transaction | **Exists** (`UploadDocument`, `ListDocuments`) |
-| `adapters/` | Implements domain ports against real infra (DB, object storage, LLM) | **Exists** (`PostgresDocumentRepository`, `SqlAlchemyUnitOfWork`; object storage / LLM to come) |
+| `adapters/` | Implements domain ports against real infra (DB, object storage, LLM) | **Exists** (`PostgresDocumentRepository`, `SqlAlchemyUnitOfWork`, `S3DocumentStorage`; LLM to come) |
 | `entrypoints/` | FastAPI app, routes, schemas, wiring | **Exists** (`GET /health`; `POST`/`GET /api/documents`) |
 
 ## Document lifecycle
@@ -109,6 +109,20 @@ the *running* app to Postgres (settings, engine lifespan, schema, a compose serv
 is a later slice; the in-memory fake still backs the fast unit/API suite. See
 **[ADR-006](adr/006-postgres-persistence-adapter.md)**.
 
+## Storing files in object storage
+
+The `DocumentStorage` port's real implementation is **`S3DocumentStorage`** — an
+**S3-compatible** client (Garage / MinIO / AWS — endpoint-agnostic, same code for
+the self-contained stack and a cloud bucket). boto3 is synchronous, so each call is
+offloaded to the **anyio worker thread** to keep the event loop free; the adapter
+assumes its bucket exists (provisioned out of band), as the Postgres adapter assumes
+its schema does. It ships only `put` (the port's surface), proven against a **real
+MinIO testcontainer** in `tests/integration/` (`make integration`) — a fresh bucket
+per test, the round-trip read back through a separate client. Live wiring (endpoint,
+keys, bucket from settings; a compose object-store service) is deferred to the
+composition-root slice alongside Postgres. See
+**[ADR-007](adr/007-s3-object-storage-adapter.md)**.
+
 ## Uploading a document
 
 The first use case lives in the `services/` layer. **`UploadDocument`** takes a
@@ -117,7 +131,8 @@ metadata in a Unit of Work — the deliberate ordering ADR-004 explains. The fil
 location is `Document.source_key` (`documents/{id}/source`), a pure function of
 identity, distinct from `content_key` (the extracted text). Storage is reached
 through a third domain port, **`DocumentStorage`** (`domain/document/ports/`,
-`put` for now), in-memory today and an S3-compatible adapter later. Dependencies
+`put` for now), in-memory in tests and an S3-compatible adapter for real (above).
+Dependencies
 (`uow_factory`, `storage`) arrive as constructor parameters; upload leaves the
 document `UPLOADED`. See
 **[ADR-004](adr/004-object-storage-port-and-services-layer.md)**.
@@ -175,11 +190,11 @@ when the slice is built test-first (so the ADR reflects real, validated code):
   settings/`DATABASE_URL`, an engine lifespan, schema management, and a Postgres
   service in the compose stack. Until then `get_uow_factory` stays a seam the API
   tests override with the in-memory fake. _ADR to follow with that slice._
-- **Object storage** — the `DocumentStorage` *port* exists (in-memory, holding
-  uploaded source files keyed by `source_key`); what remains is the real
-  **S3-compatible** (Garage) adapter and storing the **extracted content** keyed
-  by `content_key` — the database keeps metadata and keys, never blobs.
-  _Adapter ADR to follow with the storage slice._
+- **Object storage** — the `DocumentStorage` port and its **S3-compatible adapter**
+  both exist and store source files keyed by `source_key` (see "Storing files in
+  object storage"); what remains is storing the **extracted content** keyed by
+  `content_key` — the database keeps metadata and keys, never blobs — and the live
+  wiring (see "Live persistence wiring", shared with Postgres). _ADRs to follow._
 - **Extraction** — turn a source into Markdown text: PDFs in-process via
   PyMuPDF, URLs via trafilatura/Playwright. This text is internal — the input to
   summarization, never shown to the user. Drives `PROCESSING → READY/FAILED`.
@@ -210,11 +225,14 @@ the code on purpose. Implemented so far:
   implementations: the in-memory fake for unit tests, and a **Postgres adapter**
   (`adapters/persistence/`, SQLAlchemy + imperative mapping) proven against a real
   database in the `tests/integration/` layer (`make integration`).
-- The first use cases (the `services/` layer): **`UploadDocument`**, over a
-  `DocumentStorage` port — stores the source file (in-memory adapter) then
-  persists the document, file-first so a failure can only orphan a blob — and
-  **`ListDocuments`**, a read returning every stored document via
-  `DocumentRepository.find_all`.
+- The object-storage **port** (`DocumentStorage`) with two implementations: the
+  in-memory fake for unit tests, and an **S3-compatible adapter** (`adapters/storage/`,
+  boto3 in the anyio thread pool) proven against a real MinIO container in the
+  `tests/integration/` layer.
+- The first use cases (the `services/` layer): **`UploadDocument`**, over the
+  `DocumentStorage` port — stores the source file then persists the document,
+  file-first so a failure can only orphan a blob — and **`ListDocuments`**, a read
+  returning every stored document via `DocumentRepository.find_all`.
 
 Everything under **Planned** above is direction, not code, yet.
 
@@ -229,3 +247,4 @@ references a decision made later.
 - [ADR-004 — Object-storage port and the services layer](adr/004-object-storage-port-and-services-layer.md)
 - [ADR-005 — HTTP API routing, schemas, and the DI seam](adr/005-http-api-routing-schemas-and-di-seam.md)
 - [ADR-006 — Postgres persistence adapter (SQLAlchemy + testcontainers)](adr/006-postgres-persistence-adapter.md)
+- [ADR-007 — S3-compatible object-storage adapter (boto3 in an anyio thread pool)](adr/007-s3-object-storage-adapter.md)
