@@ -4,6 +4,7 @@ from fastapi import Depends
 
 from pagemaster.domain.document.ports.document_storage import DocumentStorage
 from pagemaster.domain.ports.unit_of_work import UnitOfWorkFactory
+from pagemaster.services.document.delete_document import DeleteDocument
 from pagemaster.services.document.list_documents import ListDocuments
 from pagemaster.services.document.upload_document import UploadDocument
 
@@ -31,3 +32,10 @@ def get_list_documents(
     uow_factory: UnitOfWorkFactory = Depends(get_uow_factory),
 ) -> ListDocuments:
     return ListDocuments(uow_factory)
+
+
+def get_delete_document(
+    uow_factory: UnitOfWorkFactory = Depends(get_uow_factory),
+    storage: DocumentStorage = Depends(get_document_storage),
+) -> DeleteDocument:
+    return DeleteDocument(uow_factory, storage)

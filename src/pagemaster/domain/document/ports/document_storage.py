@@ -6,10 +6,15 @@ class DocumentStorage(ABC):
 
     Reached from a use case, never constructed directly; objects are addressed
     by key (a document derives its own via :attr:`Document.source_key`). ``get``
-    / ``delete`` arrive in the batches that need them.
+    arrives in the batch that needs it.
     """
 
     @abstractmethod
     async def put(self, key: str, data: bytes) -> None:
         """Store ``data`` at ``key``, overwriting any existing object."""
+        ...
+
+    @abstractmethod
+    async def delete(self, key: str) -> None:
+        """Remove the object at ``key``; a no-op if it is absent."""
         ...

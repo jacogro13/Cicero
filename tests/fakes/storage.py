@@ -14,6 +14,9 @@ class InMemoryDocumentStorage(DocumentStorage):
     async def put(self, key: str, data: bytes) -> None:
         self.objects[key] = data
 
+    async def delete(self, key: str) -> None:
+        self.objects.pop(key, None)
+
     async def get(self, key: str) -> bytes:
         """Read back a stored object (test helper, not part of the port yet)."""
         return self.objects[key]

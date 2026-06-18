@@ -22,24 +22,39 @@ class InMemoryDocumentRepository(DocumentRepository):
     def __init__(self, store: dict[DocumentId, Document]) -> None:
         self._store = store
         self._pending: dict[DocumentId, Document] = {}
+        self._pending_deletes: set[DocumentId] = set()
 
     async def save(self, document: Document) -> None:
+        self._pending_deletes.discard(document.id)
         self._pending[document.id] = document
 
+    async def delete(self, document: Document) -> None:
+        self._pending.pop(document.id, None)
+        self._pending_deletes.add(document.id)
+
     async def find_by_id(self, document_id: DocumentId) -> Document | None:
+        if document_id in self._pending_deletes:
+            return None
         if document_id in self._pending:
             return self._pending[document_id]
         return self._store.get(document_id)
 
     async def find_all(self) -> list[Document]:
-        return list({**self._store, **self._pending}.values())
+        visible = {**self._store, **self._pending}
+        for document_id in self._pending_deletes:
+            visible.pop(document_id, None)
+        return list(visible.values())
 
     def flush(self) -> None:
         self._store.update(self._pending)
+        for document_id in self._pending_deletes:
+            self._store.pop(document_id, None)
         self._pending.clear()
+        self._pending_deletes.clear()
 
     def discard(self) -> None:
         self._pending.clear()
+        self._pending_deletes.clear()
 
 
 class InMemoryUnitOfWork(UnitOfWork):

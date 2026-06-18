@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from pagemaster.domain.document.document_id import DocumentId
 from pagemaster.domain.document.document_status import DocumentStatus
+from pagemaster.domain.document.exceptions import InvalidDocumentTitle
 
 
 @dataclass
@@ -25,7 +26,7 @@ class Document:
     @classmethod
     def create(cls, title: str) -> Document:
         if not title.strip():
-            raise ValueError("title must not be empty")
+            raise InvalidDocumentTitle("title must not be empty")
         return cls(id=DocumentId.new(), title=title)
 
     @property

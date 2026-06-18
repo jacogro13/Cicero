@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from pagemaster.entrypoints.errors import register_exception_handlers
 from pagemaster.entrypoints.routers.documents import router as documents_router
 
 
@@ -11,6 +12,7 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(documents_router, prefix="/api")
+    register_exception_handlers(app)
 
     return app
 

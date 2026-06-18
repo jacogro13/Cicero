@@ -37,3 +37,8 @@ class S3DocumentStorage(DocumentStorage):
     async def put(self, key: str, data: bytes) -> None:
         call = partial(self._client.put_object, Bucket=self._bucket, Key=key, Body=data)
         await anyio.to_thread.run_sync(call)
+
+    async def delete(self, key: str) -> None:
+        # S3 delete_object is idempotent: deleting an absent key still succeeds.
+        call = partial(self._client.delete_object, Bucket=self._bucket, Key=key)
+        await anyio.to_thread.run_sync(call)

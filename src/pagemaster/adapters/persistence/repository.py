@@ -27,3 +27,6 @@ class PostgresDocumentRepository(DocumentRepository):
 
     async def find_all(self) -> list[Document]:
         return list(await self._session.scalars(select(Document)))
+
+    async def delete(self, document: Document) -> None:
+        await self._session.delete(document)
