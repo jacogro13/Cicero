@@ -26,5 +26,5 @@ jobs:
       - name: Run tests
         run: make test
 
-      - name: Run integration tests (real Postgres via testcontainers)
+      - name: Run integration tests (real Postgres + MinIO via testcontainers)
         run: make integration
