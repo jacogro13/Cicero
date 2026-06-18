@@ -44,10 +44,10 @@ imports the other); the rule is enforced in CI by import-linter.
 
 | Layer | Responsibility | Status |
 |-------|----------------|--------|
-| `domain/` | Entities, value objects, ports — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`) |
-| `services/` | One use-case class per command; owns its Unit-of-Work transaction | **Exists** (`UploadDocument`, `ListDocuments`) |
+| `domain/` | Entities, value objects, ports, errors — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`; `DomainError` hierarchy) |
+| `services/` | One use-case class per command; owns its Unit-of-Work transaction | **Exists** (`UploadDocument`, `ListDocuments`, `DeleteDocument`) |
 | `adapters/` | Implements domain ports against real infra (DB, object storage, LLM) | **Exists** (`PostgresDocumentRepository`, `SqlAlchemyUnitOfWork`, `S3DocumentStorage`; LLM to come) |
-| `entrypoints/` | FastAPI app, routes, schemas, wiring | **Exists** (`GET /health`; `POST`/`GET /api/documents`) |
+| `entrypoints/` | FastAPI app, routes, schemas, error mapping, wiring | **Exists** (`GET /health`; `POST`/`GET`/`DELETE /api/documents`) |
 
 ## Document lifecycle
 
@@ -73,7 +73,7 @@ stateDiagram-v2
 Persistence is reached through two domain **ports** (abstract interfaces; the
 concrete adapters that implement them live outside the domain). A **repository**
 is the collection for one *aggregate* — `DocumentRepository` (`save`,
-`find_by_id`, `find_all`) for `Document`, under `domain/document/ports/`. The **`UnitOfWork`**
+`find_by_id`, `find_all`, `delete`) for `Document`, under `domain/document/ports/`. The **`UnitOfWork`**
 (under `domain/ports/`) is the transaction *scope*: an async context manager that
 exposes one repository per aggregate (`uow.documents`, later `uow.notes` / …), so
 a single block commits across all of them atomically. **Commit is explicit; any
@@ -116,7 +116,7 @@ The `DocumentStorage` port's real implementation is **`S3DocumentStorage`** — 
 the self-contained stack and a cloud bucket). boto3 is synchronous, so each call is
 offloaded to the **anyio worker thread** to keep the event loop free; the adapter
 assumes its bucket exists (provisioned out of band), as the Postgres adapter assumes
-its schema does. It ships only `put` (the port's surface), proven against a **real
+its schema does. It ships `put` and `delete` (the port's surface), proven against a **real
 MinIO testcontainer** in `tests/integration/` (`make integration`) — a fresh bucket
 per test, the round-trip read back through a separate client. Live wiring (endpoint,
 keys, bucket from settings; a compose object-store service) is deferred to the
@@ -152,14 +152,34 @@ sequenceDiagram
     U-->>C: return doc
 ```
 
+## Deleting a document
+
+**`DeleteDocument`** removes a document's metadata and then its source file — the
+exact mirror of upload's ordering (ADR-004): committing the delete first and
+removing the blob after means the only possible inconsistency is a harmless
+orphaned blob, never a metadata row pointing at a missing file. An unknown id
+raises `DocumentNotFound`. `DELETE /api/documents/{id}` returns 204.
+
+## Errors: the domain raises, the entrypoints map
+
+Domain failures are a small `DomainError` hierarchy (`InvalidDocumentTitle`,
+`DocumentNotFound`) raised where the rule lives; the domain never names an HTTP
+status (ADR-001). A single registry in `entrypoints/errors.py` maps each to a
+response — `InvalidDocumentTitle → 422`, `DocumentNotFound → 404` — so the status
+codes live in one place and an unmapped domain error surfaces as 500 by design.
+See **[ADR-008](adr/008-domain-exceptions-and-http-error-mapping.md)**.
+
 ## Exposing the use cases over HTTP
 
 The `entrypoints/` layer puts the use cases on the wire. Routes live in an
 `APIRouter` mounted under `/api` — `POST /api/documents` (a `multipart` `title` +
-file upload) and `GET /api/documents` (the library list); `/health` stays
+file upload), `GET /api/documents` (the library list), and
+`DELETE /api/documents/{id}` (→ 204); `/health` stays
 unprefixed. Each route is thin: parse the request, call the use case, map the
 result to a **`DocumentResponse`** (`id`, `title`, `status`) — the wire shape that
-deliberately omits the internal storage keys and extracted text. Use cases are
+deliberately omits the internal storage keys and extracted text. Domain failures
+raised by the use cases are turned into responses by the error registry (see
+"Errors: the domain raises, the entrypoints map"). Use cases are
 assembled in `dependencies.py` and injected with `Depends`; the leaf infra
 providers (`uow_factory`, `storage`) are the swap point — they raise until a real
 adapter lands, and tests override them with the in-memory fakes through FastAPI's
@@ -216,9 +236,11 @@ the code on purpose. Implemented so far:
 
 - `GET /health` and the app/CI spine.
 - The HTTP API (the `entrypoints/` layer): `POST /api/documents` (multipart
-  upload) and `GET /api/documents` (list), mapping the domain to a
-  `DocumentResponse` and wiring the use cases through a dependency-injection seam
-  whose infra providers are overridden in tests until the real adapters land.
+  upload), `GET /api/documents` (list), and `DELETE /api/documents/{id}` (204),
+  mapping the domain to a `DocumentResponse`, turning `DomainError`s into HTTP
+  statuses through one registry, and wiring the use cases through a
+  dependency-injection seam whose infra providers are overridden in tests until
+  the real adapters land.
 - The `Document` aggregate: a generated `DocumentId`, a validated title, and the
   status state machine.
 - The persistence **ports** (`DocumentRepository`, `UnitOfWork`) with two
@@ -229,10 +251,12 @@ the code on purpose. Implemented so far:
   in-memory fake for unit tests, and an **S3-compatible adapter** (`adapters/storage/`,
   boto3 in the anyio thread pool) proven against a real MinIO container in the
   `tests/integration/` layer.
-- The first use cases (the `services/` layer): **`UploadDocument`**, over the
+- The use cases (the `services/` layer): **`UploadDocument`**, over the
   `DocumentStorage` port — stores the source file then persists the document,
-  file-first so a failure can only orphan a blob — and **`ListDocuments`**, a read
-  returning every stored document via `DocumentRepository.find_all`.
+  file-first so a failure can only orphan a blob; **`ListDocuments`**, a read
+  returning every stored document via `DocumentRepository.find_all`; and
+  **`DeleteDocument`**, which removes metadata then the source blob (the mirror of
+  upload's ordering) and raises `DocumentNotFound` for an unknown id.
 
 Everything under **Planned** above is direction, not code, yet.
 
@@ -248,3 +272,4 @@ references a decision made later.
 - [ADR-005 — HTTP API routing, schemas, and the DI seam](adr/005-http-api-routing-schemas-and-di-seam.md)
 - [ADR-006 — Postgres persistence adapter (SQLAlchemy + testcontainers)](adr/006-postgres-persistence-adapter.md)
 - [ADR-007 — S3-compatible object-storage adapter (boto3 in an anyio thread pool)](adr/007-s3-object-storage-adapter.md)
+- [ADR-008 — Domain exceptions and domain→HTTP error mapping](adr/008-domain-exceptions-and-http-error-mapping.md)
