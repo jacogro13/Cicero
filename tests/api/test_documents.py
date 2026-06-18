@@ -72,3 +72,34 @@ class TestListDocuments:
 
         assert response.status_code == 200
         assert [doc["title"] for doc in response.json()] == ["Clean Code"]
+
+
+class TestDeleteDocument:
+    def test_delete_removes_the_document_and_returns_204(self):
+        client = _client()
+        created = client.post(
+            "/api/documents", data={"title": "Clean Code"}, files={"file": _PDF}
+        ).json()
+
+        response = client.delete(f"/api/documents/{created['id']}")
+
+        assert response.status_code == 204
+        assert client.get("/api/documents").json() == []
+
+    def test_delete_unknown_id_returns_404(self):
+        client = _client()
+
+        response = client.delete(f"/api/documents/{uuid.uuid4()}")
+
+        assert response.status_code == 404
+
+
+class TestDomainErrorMapping:
+    def test_empty_title_returns_422(self):
+        client = _client()
+
+        response = client.post(
+            "/api/documents", data={"title": "   "}, files={"file": _PDF}
+        )
+
+        assert response.status_code == 422

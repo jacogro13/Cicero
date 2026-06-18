@@ -5,6 +5,7 @@ import pytest
 from pagemaster.domain.document.document import Document
 from pagemaster.domain.document.document_id import DocumentId
 from pagemaster.domain.document.document_status import DocumentStatus
+from pagemaster.domain.document.exceptions import InvalidDocumentTitle
 
 
 class TestDocumentCreate:
@@ -23,11 +24,11 @@ class TestDocumentCreate:
         assert first.id != second.id
 
     def test_empty_title_is_rejected(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(InvalidDocumentTitle):
             Document.create("")
 
     def test_whitespace_only_title_is_rejected(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(InvalidDocumentTitle):
             Document.create("   ")
 
 

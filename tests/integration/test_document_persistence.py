@@ -71,3 +71,19 @@ class TestDocumentPersistenceOnPostgres:
 
         async with uow_factory() as uow:
             assert await uow.documents.find_by_id(doc.id) is None
+
+    async def test_committed_delete_removes_the_document(
+        self, uow_factory: UnitOfWorkFactory
+    ):
+        doc = Document.create("Working Effectively with Legacy Code")
+
+        async with uow_factory() as uow:
+            await uow.documents.save(doc)
+            await uow.commit()
+
+        async with uow_factory() as uow:
+            await uow.documents.delete(await uow.documents.find_by_id(doc.id))
+            await uow.commit()
+
+        async with uow_factory() as uow:
+            assert await uow.documents.find_by_id(doc.id) is None

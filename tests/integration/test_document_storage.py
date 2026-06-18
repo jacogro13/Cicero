@@ -5,6 +5,7 @@ in-memory double's contract, now proven against MinIO over the wire.
 """
 
 import pytest
+from botocore.exceptions import ClientError
 
 from pagemaster.adapters.storage.s3 import S3DocumentStorage
 
@@ -25,3 +26,14 @@ class TestS3DocumentStorage:
         await storage.put("documents/abc123/source", b"second")
 
         assert read_object("documents/abc123/source") == b"second"
+
+    async def test_delete_removes_the_object(self, storage, read_object):
+        await storage.put("documents/abc123/source", b"%PDF-1.4 source bytes")
+
+        await storage.delete("documents/abc123/source")
+
+        with pytest.raises(ClientError):
+            read_object("documents/abc123/source")
+
+    async def test_delete_is_a_no_op_for_a_missing_object(self, storage):
+        await storage.delete("documents/never-stored/source")
