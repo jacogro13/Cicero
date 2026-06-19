@@ -40,7 +40,6 @@ documents = Table(
     Column("id", DocumentIdType, primary_key=True),
     Column("title", String, nullable=False),
     Column("status", Enum(DocumentStatus, name="document_status"), nullable=False),
-    Column("content_key", String, nullable=True),
 )
 
 _mappers_started = False

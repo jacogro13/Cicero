@@ -38,6 +38,13 @@ class S3DocumentStorage(DocumentStorage):
         call = partial(self._client.put_object, Bucket=self._bucket, Key=key, Body=data)
         await anyio.to_thread.run_sync(call)
 
+    async def get(self, key: str) -> bytes:
+        # The streaming body read is network I/O too, so it runs in the thread.
+        return await anyio.to_thread.run_sync(partial(self._get_sync, key))
+
+    def _get_sync(self, key: str) -> bytes:
+        return self._client.get_object(Bucket=self._bucket, Key=key)["Body"].read()
+
     async def delete(self, key: str) -> None:
         # S3 delete_object is idempotent: deleting an absent key still succeeds.
         call = partial(self._client.delete_object, Bucket=self._bucket, Key=key)

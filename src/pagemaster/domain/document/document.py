@@ -19,9 +19,6 @@ class Document:
     id: DocumentId
     title: str
     status: DocumentStatus = DocumentStatus.UPLOADED
-    #: Locator for the extracted text (internal, never shown to the reader);
-    #: ``None`` until set with the status by :meth:`mark_ready` (ADR-002).
-    content_key: str | None = None
 
     @classmethod
     def create(cls, title: str) -> Document:
@@ -31,16 +28,25 @@ class Document:
 
     @property
     def source_key(self) -> str:
-        """Storage key for the original source file, derived from identity
-        (ADR-004). Distinct from :attr:`content_key` (the extracted text)."""
-        return f"documents/{self.id.value}/source"
+        """Storage key for the original source file (ADR-004)."""
+        return self._storage_key("source")
+
+    @property
+    def content_key(self) -> str:
+        """Storage key for the extracted text — internal, never shown to the
+        reader (ADR-004). The text exists only once :attr:`status` is READY
+        (ADR-002); the key itself is just the identity-derived address."""
+        return self._storage_key("content")
+
+    def _storage_key(self, name: str) -> str:
+        """Object-storage layout, a pure function of identity: ``documents/{id}/{name}``."""
+        return f"documents/{self.id.value}/{name}"
 
     def mark_processing(self) -> None:
         self.status = DocumentStatus.PROCESSING
 
-    def mark_ready(self, content_key: str) -> None:
+    def mark_ready(self) -> None:
         self.status = DocumentStatus.READY
-        self.content_key = content_key
 
     def mark_failed(self) -> None:
         self.status = DocumentStatus.FAILED

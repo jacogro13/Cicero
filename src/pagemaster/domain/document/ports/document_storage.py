@@ -5,13 +5,17 @@ class DocumentStorage(ABC):
     """Port: object storage for a document's files (ADR-004).
 
     Reached from a use case, never constructed directly; objects are addressed
-    by key (a document derives its own via :attr:`Document.source_key`). ``get``
-    arrives in the batch that needs it.
+    by key (a document derives its own via :attr:`Document.source_key`).
     """
 
     @abstractmethod
     async def put(self, key: str, data: bytes) -> None:
         """Store ``data`` at ``key``, overwriting any existing object."""
+        ...
+
+    @abstractmethod
+    async def get(self, key: str) -> bytes:
+        """Return the bytes stored at ``key`` (ADR-009: extraction reads the source)."""
         ...
 
     @abstractmethod
