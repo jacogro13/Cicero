@@ -27,29 +27,31 @@ Model the lifecycle as a `DocumentStatus` enum, mutated only through methods on
 stateDiagram-v2
     [*] --> UPLOADED
     UPLOADED --> PROCESSING: mark_processing()
-    PROCESSING --> READY: mark_ready(content_key)
+    PROCESSING --> READY: mark_ready()
     PROCESSING --> FAILED: mark_failed()
     READY --> [*]
     FAILED --> [*]
 ```
 
-A new document starts `UPLOADED`. `mark_ready(content_key)` flips the status
-**and** sets `content_key` in one call. There are no reverse transitions
-(re-extraction is not supported).
+A new document starts `UPLOADED`; the `mark_*` methods are the only way to move
+it. There are no reverse transitions (re-extraction is not supported).
 
-`content_key` is an **opaque locator for the extracted text** — internal raw
-material for summaries, never shown to the reader. The domain holds it as a plain
-string and deliberately does not know the text's format, location, or how it is
-produced; those are separate ADRs (extraction, storage, summarization). Keeping
-it opaque is what lets the domain stay infrastructure-agnostic (ADR-001).
+`status` is the single source of truth for **readiness**: the extracted text
+exists when (and only when) the status is READY. `content_key` is not lifecycle
+state — it is the **identity-derived address** of that text, always computable
+from the id, opaque to the domain (which knows neither its format nor where it
+physically lives). Folding the locator into a nullable
+field would duplicate what `status` already says; deriving the address and reading
+readiness off `status` keeps one fact in one place.
 
 ---
 
 ## Consequences
 
-- `mark_ready()` makes "READY ⇒ `content_key` set" atomic, so there is never a
-  READY document with a null key. Valid states live in one enum; an unknown
-  status string fails to deserialise rather than flowing through silently.
+- "READY ⇔ extracted text exists" is structural, not a maintained invariant:
+  readiness is `status` alone, and the address is derived, so the two can never
+  disagree (no nullable key to forget to set). Valid states live in one enum; an
+  unknown status string fails to deserialise rather than flowing through silently.
 - Transitions are self-documenting — a new one needs a deliberate new method.
 - The methods don't guard call *order* (e.g. `mark_ready()` twice); the guard is
   encapsulation, not runtime checks, and the method is the place to add one if
