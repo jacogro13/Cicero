@@ -44,25 +44,27 @@ imports the other); the rule is enforced in CI by import-linter.
 
 | Layer | Responsibility | Status |
 |-------|----------------|--------|
-| `domain/` | Entities, value objects, ports, errors — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`; `DomainError` hierarchy) |
-| `services/` | One use-case class per command; owns its Unit-of-Work transaction | **Exists** (`UploadDocument`, `ListDocuments`, `DeleteDocument`) |
-| `adapters/` | Implements domain ports against real infra (DB, object storage, LLM) | **Exists** (`PostgresDocumentRepository`, `SqlAlchemyUnitOfWork`, `S3DocumentStorage`; LLM to come) |
+| `domain/` | Entities, value objects, ports, errors — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`, `DocumentExtractor`; `DomainError` hierarchy) |
+| `services/` | One use-case class per command; owns its Unit-of-Work transaction | **Exists** (`UploadDocument`, `ListDocuments`, `DeleteDocument`, `ExtractDocument`) |
+| `adapters/` | Implements domain ports against real infra (DB, object storage, extraction, LLM) | **Exists** (`PostgresDocumentRepository`, `SqlAlchemyUnitOfWork`, `S3DocumentStorage`, `PyMuPDFExtractor`; LLM to come) |
 | `entrypoints/` | FastAPI app, routes, schemas, error mapping, wiring | **Exists** (`GET /health`; `POST`/`GET`/`DELETE /api/documents`) |
 
 ## Document lifecycle
 
 `Document` is the aggregate root. Its status is a guarded state machine —
 `UPLOADED → PROCESSING → READY | FAILED` — with transitions encapsulated as
-entity methods, not a free `status` setter. The `content_key` (an opaque locator for
-the internal extracted text, never shown to the reader) is set atomically when a
-document becomes READY. See
-**[ADR-002](adr/002-document-status-state-machine.md)**.
+entity methods, not a free `status` setter. `status` is the single source of truth
+for readiness: the internal extracted text (an opaque locator, never shown to the
+reader) exists when, and only when, the status is READY. `content_key` is not
+lifecycle state — it is the identity-derived address of that text (`source_key`'s
+twin), always computable, so nothing has to be set or kept in sync on transition.
+See **[ADR-002](adr/002-document-status-state-machine.md)**.
 
 ```mermaid
 stateDiagram-v2
     [*] --> UPLOADED
     UPLOADED --> PROCESSING: mark_processing()
-    PROCESSING --> READY: mark_ready(content_key)
+    PROCESSING --> READY: mark_ready()
     PROCESSING --> FAILED: mark_failed()
     READY --> [*]
     FAILED --> [*]
@@ -116,7 +118,7 @@ The `DocumentStorage` port's real implementation is **`S3DocumentStorage`** — 
 the self-contained stack and a cloud bucket). boto3 is synchronous, so each call is
 offloaded to the **anyio worker thread** to keep the event loop free; the adapter
 assumes its bucket exists (provisioned out of band), as the Postgres adapter assumes
-its schema does. It ships `put` and `delete` (the port's surface), proven against a **real
+its schema does. It ships `put`, `get`, and `delete` (the port's surface), proven against a **real
 MinIO testcontainer** in `tests/integration/` (`make integration`) — a fresh bucket
 per test, the round-trip read back through a separate client. Live wiring (endpoint,
 keys, bucket from settings; a compose object-store service) is deferred to the
@@ -130,8 +132,8 @@ title and the source file's bytes; it stores the file first, then commits the
 metadata in a Unit of Work — the deliberate ordering ADR-004 explains. The file's
 location is `Document.source_key` (`documents/{id}/source`), a pure function of
 identity, distinct from `content_key` (the extracted text). Storage is reached
-through a third domain port, **`DocumentStorage`** (`domain/document/ports/`,
-`put` for now), in-memory in tests and an S3-compatible adapter for real (above).
+through a third domain port, **`DocumentStorage`** (`domain/document/ports/`),
+in-memory in tests and an S3-compatible adapter for real (above).
 Dependencies
 (`uow_factory`, `storage`) arrive as constructor parameters; upload leaves the
 document `UPLOADED`. See
@@ -159,6 +161,40 @@ exact mirror of upload's ordering (ADR-004): committing the delete first and
 removing the blob after means the only possible inconsistency is a harmless
 orphaned blob, never a metadata row pointing at a missing file. An unknown id
 raises `DocumentNotFound`. `DELETE /api/documents/{id}` returns 204.
+
+## Extracting a document
+
+**`ExtractDocument`** turns an uploaded source into the internal Markdown that
+summarization will read (never shown to the reader). It drives the rest of the
+status machine for real: it commits `PROCESSING` first (so the in-flight state is
+observable), runs the heavy I/O outside any transaction — read the source bytes
+(`DocumentStorage.get`), extract Markdown (the new **`DocumentExtractor`** port),
+write the result blob to `document.content_key` — then commits `READY`. The
+service never mints a storage key: `content_key` is the document's own
+identity-derived address (`documents/{id}/content`). Storage-first mirrors upload
+(ADR-004): the blob is written before `READY` is committed, so a READY document
+never points at a missing content file. Extraction failure commits `FAILED` (status is the outcome channel
+for the background job to come); an unknown id raises `DocumentNotFound`. The real
+extractor is **`PyMuPDFExtractor`** (`pymupdf4llm`, in-process, offloaded to the
+anyio thread); a stub backs the unit tests. See
+**[ADR-009](adr/009-content-extraction-and-the-extract-document-use-case.md)**.
+
+```mermaid
+sequenceDiagram
+    participant U as ExtractDocument
+    participant W as UnitOfWork
+    participant S as DocumentStorage
+    participant E as DocumentExtractor
+    U->>W: commit mark_processing()
+    U->>S: source = await get(source_key)
+    U->>E: markdown = await extract_markdown(source)
+    alt extraction succeeds
+        U->>S: await put(document.content_key, markdown)
+        U->>W: commit mark_ready()
+    else extraction fails
+        U->>W: commit mark_failed()
+    end
+```
 
 ## Errors: the domain raises, the entrypoints map
 
@@ -211,14 +247,14 @@ when the slice is built test-first (so the ADR reflects real, validated code):
   service in the compose stack. Until then `get_uow_factory` stays a seam the API
   tests override with the in-memory fake. _ADR to follow with that slice._
 - **Object storage** — the `DocumentStorage` port and its **S3-compatible adapter**
-  both exist and store source files keyed by `source_key` (see "Storing files in
-  object storage"); what remains is storing the **extracted content** keyed by
-  `content_key` — the database keeps metadata and keys, never blobs — and the live
-  wiring (see "Live persistence wiring", shared with Postgres). _ADRs to follow._
-- **Extraction** — turn a source into Markdown text: PDFs in-process via
-  PyMuPDF, URLs via trafilatura/Playwright. This text is internal — the input to
-  summarization, never shown to the user. Drives `PROCESSING → READY/FAILED`.
-  _ADR to follow with the extraction slice._
+  both exist and store source files (`source_key`) and extracted content
+  (`content_key`); the database keeps metadata only, never blobs, and the keys are
+  identity-derived addresses, not stored columns. What remains
+  is the live wiring (see "Live persistence wiring", shared with Postgres). _ADRs
+  to follow._
+- **URL ingest** — extraction handles PDFs (see "Extracting a document"); adding a
+  web article as a document (trafilatura/Playwright) extends the `DocumentExtractor`
+  port when that slice lands. _ADR to follow._
 - **AI summaries (the read experience)** — the extracted text is summarized into
   what the user actually reads: per-chapter summaries for a book, a single
   summary for an article. Built on top: chat over the document (any source) and,
@@ -247,16 +283,21 @@ the code on purpose. Implemented so far:
   implementations: the in-memory fake for unit tests, and a **Postgres adapter**
   (`adapters/persistence/`, SQLAlchemy + imperative mapping) proven against a real
   database in the `tests/integration/` layer (`make integration`).
-- The object-storage **port** (`DocumentStorage`) with two implementations: the
-  in-memory fake for unit tests, and an **S3-compatible adapter** (`adapters/storage/`,
-  boto3 in the anyio thread pool) proven against a real MinIO container in the
-  `tests/integration/` layer.
+- The object-storage **port** (`DocumentStorage`, `put`/`get`/`delete`) with two
+  implementations: the in-memory fake for unit tests, and an **S3-compatible adapter**
+  (`adapters/storage/`, boto3 in the anyio thread pool) proven against a real MinIO
+  container in the `tests/integration/` layer.
+- The extraction **port** (`DocumentExtractor`) with two implementations: a stub
+  for unit tests, and **`PyMuPDFExtractor`** (`adapters/extraction/`, `pymupdf4llm`
+  in-process) proven against a real generated PDF in the `tests/integration/` layer.
 - The use cases (the `services/` layer): **`UploadDocument`**, over the
   `DocumentStorage` port — stores the source file then persists the document,
   file-first so a failure can only orphan a blob; **`ListDocuments`**, a read
-  returning every stored document via `DocumentRepository.find_all`; and
+  returning every stored document via `DocumentRepository.find_all`;
   **`DeleteDocument`**, which removes metadata then the source blob (the mirror of
-  upload's ordering) and raises `DocumentNotFound` for an unknown id.
+  upload's ordering) and raises `DocumentNotFound` for an unknown id; and
+  **`ExtractDocument`**, which drives `PROCESSING → READY/FAILED`, storing the
+  extracted Markdown at `content_key` (file-first, like upload).
 
 Everything under **Planned** above is direction, not code, yet.
 
@@ -273,3 +314,4 @@ references a decision made later.
 - [ADR-006 — Postgres persistence adapter (SQLAlchemy + testcontainers)](adr/006-postgres-persistence-adapter.md)
 - [ADR-007 — S3-compatible object-storage adapter (boto3 in an anyio thread pool)](adr/007-s3-object-storage-adapter.md)
 - [ADR-008 — Domain exceptions and domain→HTTP error mapping](adr/008-domain-exceptions-and-http-error-mapping.md)
+- [ADR-009 — Content extraction (PDF → Markdown) and the ExtractDocument use case](adr/009-content-extraction-and-the-extract-document-use-case.md)
