@@ -37,9 +37,10 @@ class TestDocumentStatusLifecycle:
         doc = Document.create("Any Title")
         assert doc.status is DocumentStatus.UPLOADED
 
-    def test_new_document_has_no_content_key(self):
+    def test_storage_keys_are_derived_from_identity(self):
         doc = Document.create("Any Title")
-        assert doc.content_key is None
+        assert doc.source_key == f"documents/{doc.id.value}/source"
+        assert doc.content_key == f"documents/{doc.id.value}/content"
 
     def test_mark_processing_transitions_to_processing(self):
         doc = Document.create("Any Title")
@@ -49,14 +50,8 @@ class TestDocumentStatusLifecycle:
     def test_mark_ready_transitions_to_ready(self):
         doc = Document.create("Any Title")
         doc.mark_processing()
-        doc.mark_ready("documents/abc/content.md")
+        doc.mark_ready()
         assert doc.status is DocumentStatus.READY
-
-    def test_mark_ready_sets_the_content_key(self):
-        doc = Document.create("Any Title")
-        doc.mark_processing()
-        doc.mark_ready("documents/abc/content.md")
-        assert doc.content_key == "documents/abc/content.md"
 
     def test_mark_failed_transitions_to_failed(self):
         doc = Document.create("Any Title")

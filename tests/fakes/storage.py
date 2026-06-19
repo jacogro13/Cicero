@@ -1,5 +1,5 @@
 """In-memory ``DocumentStorage`` double for unit tests — a dict keyed by storage
-key. ``put`` is the port; ``get`` is a read-back helper for assertions (ADR-004).
+key (ADR-004); ``get`` joined the port for extraction (ADR-009).
 """
 
 from __future__ import annotations
@@ -18,5 +18,4 @@ class InMemoryDocumentStorage(DocumentStorage):
         self.objects.pop(key, None)
 
     async def get(self, key: str) -> bytes:
-        """Read back a stored object (test helper, not part of the port yet)."""
         return self.objects[key]

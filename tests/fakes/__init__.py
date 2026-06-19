@@ -1,8 +1,10 @@
 """In-memory test doubles for the domain ports.
 
-Split by adapter kind: persistence (repository + Unit of Work) and storage.
+Split by adapter kind: persistence (repository + Unit of Work), storage, and
+extraction.
 """
 
+from tests.fakes.extraction import StubDocumentExtractor
 from tests.fakes.persistence import (
     InMemoryDocumentRepository,
     InMemoryUnitOfWork,
@@ -15,4 +17,5 @@ __all__ = [
     "InMemoryUnitOfWork",
     "make_in_memory_uow_factory",
     "InMemoryDocumentStorage",
+    "StubDocumentExtractor",
 ]

@@ -27,6 +27,11 @@ class TestS3DocumentStorage:
 
         assert read_object("documents/abc123/source") == b"second"
 
+    async def test_get_returns_the_stored_bytes(self, storage):
+        await storage.put("documents/abc123/source", b"%PDF-1.4 source bytes")
+
+        assert await storage.get("documents/abc123/source") == b"%PDF-1.4 source bytes"
+
     async def test_delete_removes_the_object(self, storage, read_object):
         await storage.put("documents/abc123/source", b"%PDF-1.4 source bytes")
 
