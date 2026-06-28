@@ -47,7 +47,7 @@ imports the other); the rule is enforced in CI by import-linter.
 | `domain/` | Entities, value objects, ports, errors — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`, `DocumentExtractor`; `DomainError` hierarchy) |
 | `services/` | One use-case class per command; owns its Unit-of-Work transaction | **Exists** (`UploadDocument`, `ListDocuments`, `DeleteDocument`, `ExtractDocument`) |
 | `adapters/` | Implements domain ports against real infra (DB, object storage, extraction, LLM) | **Exists** (`PostgresDocumentRepository`, `SqlAlchemyUnitOfWork`, `S3DocumentStorage`, `PyMuPDFExtractor`; LLM to come) |
-| `entrypoints/` | FastAPI app, routes, schemas, error mapping, wiring | **Exists** (`GET /health`; `POST`/`GET`/`DELETE /api/documents`) |
+| `entrypoints/` | FastAPI app, routes, schemas, error mapping, the composition root (settings, engine lifespan, startup provisioning) | **Exists** (`GET /health`; `POST`/`GET`/`DELETE /api/documents`; live wiring over Postgres + S3) |
 
 ## Document lifecycle
 
@@ -106,9 +106,9 @@ transaction, with the ADR-003 commit/rollback contract — and
 translates the `DocumentId` value object ↔ a UUID column. The adapter is verified
 against **real Postgres in a throwaway testcontainer** — the `tests/integration/`
 layer (`make integration`), re-running the ADR-003 save/fetch/rollback behaviours
-unchanged, so the database is a proven swappable adapter rather than a mock. Wiring
-the *running* app to Postgres (settings, engine lifespan, schema, a compose service)
-is a later slice; the in-memory fake still backs the fast unit/API suite. See
+unchanged, so the database is a proven swappable adapter rather than a mock. The
+*running* app is wired to this adapter in the composition root (see "Running the
+app"); the in-memory fake still backs the fast unit/API suite. See
 **[ADR-006](adr/006-postgres-persistence-adapter.md)**.
 
 ## Storing files in object storage
@@ -121,8 +121,8 @@ assumes its bucket exists (provisioned out of band), as the Postgres adapter ass
 its schema does. It ships `put`, `get`, and `delete` (the port's surface), proven against a **real
 MinIO testcontainer** in `tests/integration/` (`make integration`) — a fresh bucket
 per test, the round-trip read back through a separate client. Live wiring (endpoint,
-keys, bucket from settings; a compose object-store service) is deferred to the
-composition-root slice alongside Postgres. See
+keys, bucket from settings; the bucket provisioned at startup; a compose object-store
+service) lands in the composition root (see "Running the app"). See
 **[ADR-007](adr/007-s3-object-storage-adapter.md)**.
 
 ## Uploading a document
@@ -217,9 +217,10 @@ deliberately omits the internal storage keys and extracted text. Domain failures
 raised by the use cases are turned into responses by the error registry (see
 "Errors: the domain raises, the entrypoints map"). Use cases are
 assembled in `dependencies.py` and injected with `Depends`; the leaf infra
-providers (`uow_factory`, `storage`) are the swap point — they raise until a real
-adapter lands, and tests override them with the in-memory fakes through FastAPI's
-`dependency_overrides`, so the routes are verified with no infrastructure. See
+providers (`uow_factory`, `storage`) are the swap point — wired to the real adapters
+in the composition root (see "Running the app"), and overridden with the in-memory
+fakes in tests through FastAPI's `dependency_overrides`, so the routes are verified
+with no infrastructure. See
 **[ADR-005](adr/005-http-api-routing-schemas-and-di-seam.md)**.
 
 ```mermaid
@@ -236,22 +237,39 @@ sequenceDiagram
     R-->>C: 201 DocumentResponse (id, title, status)
 ```
 
+## Running the app: the composition root
+
+The `entrypoints/` layer is also where everything is assembled into a running
+process — the composition root (`dependencies.py` + the app `lifespan`).
+Configuration is read once from the environment into **`Settings`** (`pydantic-settings`:
+`DATABASE_URL` + `S3_*`; no secrets in code). The root owns **one async engine per
+process**, builds the real `UnitOfWork` factory and `S3DocumentStorage` from settings
+— **retiring the `NotImplementedError` infra seams** — and disposes the engine on
+shutdown. On **startup it provisions the infrastructure the adapters assume**:
+`create_all` for the schema and `ensure_bucket()` for the object store, both
+idempotent (full migrations are deferred while one app owns the schema — ADR-010).
+The whole thing runs from `docker compose up`: Postgres + MinIO + the api, gated on
+health, zero external services. See
+**[ADR-010](adr/010-composition-root-settings-and-startup-provisioning.md)**.
+
+```mermaid
+sequenceDiagram
+    participant L as App lifespan
+    participant D as dependencies.py
+    participant E as Engine / Postgres
+    participant S as S3DocumentStorage / MinIO
+    L->>D: provision_infrastructure()
+    D->>E: create_schema (create_all, idempotent)
+    D->>S: ensure_bucket (idempotent)
+    Note over L: yield — app serves requests over the live adapters
+    L->>D: dispose_engine() on shutdown
+```
+
 ## Planned capabilities
 
 Each of these is a committed direction; its design decision is recorded in an ADR
 when the slice is built test-first (so the ADR reflects real, validated code):
 
-- **Live persistence wiring** — the Postgres adapter exists and is proven (see
-  "Persisting to Postgres"); what remains is connecting it to the *running* app:
-  settings/`DATABASE_URL`, an engine lifespan, schema management, and a Postgres
-  service in the compose stack. Until then `get_uow_factory` stays a seam the API
-  tests override with the in-memory fake. _ADR to follow with that slice._
-- **Object storage** — the `DocumentStorage` port and its **S3-compatible adapter**
-  both exist and store source files (`source_key`) and extracted content
-  (`content_key`); the database keeps metadata only, never blobs, and the keys are
-  identity-derived addresses, not stored columns. What remains
-  is the live wiring (see "Live persistence wiring", shared with Postgres). _ADRs
-  to follow._
 - **URL ingest** — extraction handles PDFs (see "Extracting a document"); adding a
   web article as a document (trafilatura/Playwright) extends the `DocumentExtractor`
   port when that slice lands. _ADR to follow._
@@ -298,6 +316,11 @@ the code on purpose. Implemented so far:
   upload's ordering) and raises `DocumentNotFound` for an unknown id; and
   **`ExtractDocument`**, which drives `PROCESSING → READY/FAILED`, storing the
   extracted Markdown at `content_key` (file-first, like upload).
+- The **composition root** (`entrypoints/`): environment-driven `Settings`, a
+  per-process engine wired to the real adapters (the infra seams retired), and a
+  `lifespan` that provisions the schema + bucket at startup — so `docker compose up`
+  (api + Postgres + MinIO) runs the app end to end, proven by an integration test
+  driving the live stack with no `dependency_overrides`.
 
 Everything under **Planned** above is direction, not code, yet.
 
@@ -315,3 +338,4 @@ references a decision made later.
 - [ADR-007 — S3-compatible object-storage adapter (boto3 in an anyio thread pool)](adr/007-s3-object-storage-adapter.md)
 - [ADR-008 — Domain exceptions and domain→HTTP error mapping](adr/008-domain-exceptions-and-http-error-mapping.md)
 - [ADR-009 — Content extraction (PDF → Markdown) and the ExtractDocument use case](adr/009-content-extraction-and-the-extract-document-use-case.md)
+- [ADR-010 — Composition root: settings, engine lifespan, and startup provisioning](adr/010-composition-root-settings-and-startup-provisioning.md)

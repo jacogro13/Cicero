@@ -65,23 +65,41 @@ Work in progress, built batch by batch. Implemented so far:
 - Persistence **ports** (`DocumentRepository`, `UnitOfWork`) with two implementations:
   an in-memory fake and a **Postgres adapter** proven against a real database.
 - Use cases (`services/`): `UploadDocument` (file-first over an object-storage port),
-  `ListDocuments`.
-- HTTP API: `POST` / `GET /api/documents`.
+  `ListDocuments`, `DeleteDocument`, `ExtractDocument` (PDF → Markdown).
+- HTTP API: `POST` / `GET` / `DELETE /api/documents`.
+- A **composition root** that runs the app for real — environment-driven settings,
+  an engine lifespan, and startup provisioning of the schema + bucket — so
+  **`docker compose up` runs the whole stack** (api + Postgres + MinIO) end to end.
 
-Planned: live Postgres wiring + a `docker compose` stack, object storage, PDF/URL
-extraction, AI summaries (mock by default, any OpenAI-compatible endpoint pluggable),
-chat, podcast, two React frontends (admin + reader), and end-to-end tests. See the
-roadmap in [`docs/architecture.md`](docs/architecture.md).
+Planned: PDF chapter navigation, URL ingest, AI summaries (mock by default, any
+OpenAI-compatible endpoint pluggable), chat, podcast, two React frontends (admin +
+reader), and end-to-end tests. See the roadmap in
+[`docs/architecture.md`](docs/architecture.md).
 
 ## Tech stack
 
-Python 3.12 · FastAPI · SQLAlchemy 2 (async) · PostgreSQL · `uv` · pytest ·
-import-linter · testcontainers · Docker. React frontends to come.
+Python 3.12 · FastAPI · SQLAlchemy 2 (async) · PostgreSQL · MinIO (S3) · `uv` ·
+pytest · import-linter · testcontainers · Docker Compose. React frontends to come.
 
 ## Requirements
 
-- Python 3.12 and [uv](https://docs.astral.sh/uv/)
-- Docker (only for the integration tests)
+- Docker (to run the stack, and for the integration tests)
+- Python 3.12 and [uv](https://docs.astral.sh/uv/) (to develop / run the fast suite)
+
+## Run it
+
+```bash
+make up            # docker compose up — api + Postgres + MinIO, end to end
+curl http://localhost:8000/health                       # {"status": "ok"}
+curl -F title='Clean Code' -F file=@some.pdf \
+     http://localhost:8000/api/documents                # upload a document
+curl http://localhost:8000/api/documents                # list them
+make down          # stop the stack and remove its volumes
+```
+
+The api provisions its own schema and bucket on startup, so the stack needs no setup
+step — `git clone` → `make up` and it runs. Every value defaults; copy
+[`.env.example`](.env.example) to `.env` only to override.
 
 ## Development
 
@@ -89,14 +107,8 @@ import-linter · testcontainers · Docker. React frontends to come.
 make sync          # install dependencies
 make lint          # check the hexagonal layering (import-linter)
 make test          # fast suite — unit + API, no Docker
-make integration   # integration tests against real Postgres (needs Docker)
-make dev           # run the dev server at http://localhost:8000
-```
-
-Once running, check liveness:
-
-```bash
-curl http://localhost:8000/health   # {"status": "ok"}
+make integration   # integration tests against real Postgres + MinIO (needs Docker)
+make dev           # run the app on the host (needs Postgres + MinIO; see .env.example)
 ```
 
 ## License
