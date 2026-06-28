@@ -4,8 +4,12 @@ from functools import partial
 
 import anyio
 import boto3
+from botocore.exceptions import ClientError
 
 from pagemaster.domain.document.ports.document_storage import DocumentStorage
+
+# create_bucket on a bucket this client already owns is a success, not an error.
+_BUCKET_EXISTS = {"BucketAlreadyOwnedByYou", "BucketAlreadyExists"}
 
 
 class S3DocumentStorage(DocumentStorage):
@@ -33,6 +37,18 @@ class S3DocumentStorage(DocumentStorage):
             aws_secret_access_key=secret_access_key,
             region_name=region_name,
         )
+
+    async def ensure_bucket(self) -> None:
+        """Create the bucket if absent — idempotent composition-root provisioning
+        (ADR-010), separate from the data path below, which assumes it exists."""
+        await anyio.to_thread.run_sync(self._ensure_bucket_sync)
+
+    def _ensure_bucket_sync(self) -> None:
+        try:
+            self._client.create_bucket(Bucket=self._bucket)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") not in _BUCKET_EXISTS:
+                raise
 
     async def put(self, key: str, data: bytes) -> None:
         call = partial(self._client.put_object, Bucket=self._bucket, Key=key, Body=data)
