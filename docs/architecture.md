@@ -44,10 +44,10 @@ imports the other); the rule is enforced in CI by import-linter.
 
 | Layer | Responsibility | Status |
 |-------|----------------|--------|
-| `domain/` | Entities, value objects, ports, errors — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`, `DocumentExtractor`; `DomainError` hierarchy) |
-| `services/` | One use-case class per command; owns its Unit-of-Work transaction | **Exists** (`UploadDocument`, `ListDocuments`, `DeleteDocument`, `ExtractDocument`) |
+| `domain/` | Entities, value objects, ports, messages, errors — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; messages `Command`/`Event` + `UploadDocument`/`DocumentUploaded`; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`, `DocumentExtractor`; `DomainError` hierarchy) |
+| `services/` | Command/event handlers + the message bus that routes them | **Exists** (`MessageBus`; handlers `UploadDocument`, `ListDocuments`, `DeleteDocument`, `ExtractDocument`) |
 | `adapters/` | Implements domain ports against real infra (DB, object storage, extraction, LLM) | **Exists** (`PostgresDocumentRepository`, `SqlAlchemyUnitOfWork`, `S3DocumentStorage`, `PyMuPDFExtractor`; LLM to come) |
-| `entrypoints/` | FastAPI app, routes, schemas, error mapping, the composition root (settings, engine lifespan, startup provisioning) | **Exists** (`GET /health`; `POST`/`GET`/`DELETE /api/documents`; live wiring over Postgres + S3) |
+| `entrypoints/` | FastAPI app, routes, schemas, error mapping, the composition root (settings, engine lifespan, startup provisioning, bus bootstrap) | **Exists** (`GET /health`; `POST`/`GET`/`DELETE /api/documents`; live wiring over Postgres + S3) |
 
 ## Document lifecycle
 
@@ -127,32 +127,50 @@ service) lands in the composition root (see "Running the app"). See
 
 ## Uploading a document
 
-The first use case lives in the `services/` layer. **`UploadDocument`** takes a
-title and the source file's bytes; it stores the file first, then commits the
-metadata in a Unit of Work — the deliberate ordering ADR-004 explains. The file's
-location is `Document.source_key` (`documents/{id}/source`), a pure function of
-identity, distinct from `content_key` (the extracted text). Storage is reached
-through a third domain port, **`DocumentStorage`** (`domain/document/ports/`),
-in-memory in tests and an S3-compatible adapter for real (above).
-Dependencies
-(`uow_factory`, `storage`) arrive as constructor parameters; upload leaves the
-document `UPLOADED`. See
+The first use case is a **command handler** in the `services/` layer.
+**`UploadDocument`** handles a `commands.UploadDocument` (title + source bytes): it
+stores the file first, then commits the metadata in a Unit of Work — the deliberate
+ordering ADR-004 explains. The file's location is `Document.source_key`
+(`documents/{id}/source`), a pure function of identity, distinct from `content_key`
+(the extracted text). Storage is reached through a third domain port,
+**`DocumentStorage`** (`domain/document/ports/`), in-memory in tests and an
+S3-compatible adapter for real (above). Storage is injected at bootstrap; the bus
+supplies the Unit of Work per call. Upload leaves the document `UPLOADED` and the
+aggregate records a `DocumentUploaded` event (see "Orchestration"). See
 **[ADR-004](adr/004-object-storage-port-and-services-layer.md)**.
 
 ```mermaid
 sequenceDiagram
-    participant C as Caller (route, test, …)
-    participant U as UploadDocument
+    participant B as MessageBus
+    participant U as UploadDocument handler
     participant S as DocumentStorage
     participant W as UnitOfWork
-    C->>U: await execute(title, content)
-    U->>U: doc = Document.create(title)
+    B->>U: await handler(command, uow)
+    U->>U: doc = Document.create(title) records DocumentUploaded
     U->>S: await storage.put(doc.source_key, content)
-    U->>W: async with uow_factory() as uow
+    U->>W: async with uow
     U->>W: await uow.documents.save(doc)
     U->>W: await uow.commit()
-    U-->>C: return doc
+    U-->>B: return doc
 ```
+
+## Orchestration: the message bus
+
+Use cases are reached through one entry point, **`MessageBus.handle()`** (ADR-011).
+A **`Command`** (imperative — `commands.UploadDocument`) is routed to exactly one
+handler; an **`Event`** (a past-tense fact — `DocumentUploaded`) to zero or more.
+Messages are pure data in the domain (`domain/<agg>/commands.py` + `events.py`,
+bases in `domain/messages.py`). The **aggregate is the event source**: `Document`
+records events off its own lifecycle (`create()` → `DocumentUploaded`; further
+status methods as consumers arrive). After each handler the bus **drains the Unit
+of Work's new events** — `collect_new_events()` reads them off the aggregates the
+repository has `seen` (saved or fetched) — and keeps processing until the queue
+empties, so one upload can fan out into a chain of reactions. Handlers stay
+class-based use cases, callable as `(message, uow)`; the composition root
+**bootstraps** them (injecting deps, building the command/event maps) and hands the
+bus to the routes. This earns its keep as the pipeline grows (extraction →
+summaries → podcast become event handlers, not fresh wiring). See
+**[ADR-011](adr/011-message-bus-commands-and-events.md)**.
 
 ## Deleting a document
 
@@ -213,11 +231,12 @@ file upload), `GET /api/documents` (the library list), and
 `DELETE /api/documents/{id}` (→ 204); `/health` stays
 unprefixed. Each route is thin: parse the request, call the use case, map the
 result to a **`DocumentResponse`** (`id`, `title`, `status`) — the wire shape that
-deliberately omits the internal storage keys and extracted text. Domain failures
-raised by the use cases are turned into responses by the error registry (see
-"Errors: the domain raises, the entrypoints map"). Use cases are
-assembled in `dependencies.py` and injected with `Depends`; the leaf infra
-providers (`uow_factory`, `storage`) are the swap point — wired to the real adapters
+deliberately omits the internal storage keys and extracted text. Writes go through
+the message bus (`commands.UploadDocument`); reads still call their use case
+directly. Domain failures raised by the handlers are turned into responses by the
+error registry (see "Errors: the domain raises, the entrypoints map"). The bus and
+use cases are assembled in `dependencies.py` and injected with `Depends`; the leaf
+infra providers (`uow_factory`, `storage`) are the swap point — wired to the real adapters
 in the composition root (see "Running the app"), and overridden with the in-memory
 fakes in tests through FastAPI's `dependency_overrides`, so the routes are verified
 with no infrastructure. See
@@ -228,12 +247,12 @@ sequenceDiagram
     participant C as HTTP client
     participant R as Route /api/documents
     participant D as dependencies.py
-    participant U as UploadDocument
+    participant B as MessageBus
     C->>R: POST multipart (title, file)
-    R->>D: Depends(get_upload_document)
-    D-->>R: UploadDocument(uow_factory, storage)
-    R->>U: await execute(title, content)
-    U-->>R: Document
+    R->>D: Depends(get_message_bus)
+    D-->>R: MessageBus (bootstrapped handlers)
+    R->>B: await handle(commands.UploadDocument(title, content))
+    B-->>R: Document
     R-->>C: 201 DocumentResponse (id, title, status)
 ```
 
@@ -308,6 +327,11 @@ the code on purpose. Implemented so far:
 - The extraction **port** (`DocumentExtractor`) with two implementations: a stub
   for unit tests, and **`PyMuPDFExtractor`** (`adapters/extraction/`, `pymupdf4llm`
   in-process) proven against a real generated PDF in the `tests/integration/` layer.
+- The **message bus** (the `services/` layer): one `MessageBus.handle()` routes a
+  `Command` to its single handler and an `Event` to zero or more, draining the
+  Unit of Work's new events after each handler. The `Document` aggregate records a
+  `DocumentUploaded` event on `create()`. Proof: `UploadDocument` is refactored
+  into a command handler reached through the bus (the rest of the pipeline follows).
 - The use cases (the `services/` layer): **`UploadDocument`**, over the
   `DocumentStorage` port — stores the source file then persists the document,
   file-first so a failure can only orphan a blob; **`ListDocuments`**, a read
@@ -339,3 +363,4 @@ references a decision made later.
 - [ADR-008 — Domain exceptions and domain→HTTP error mapping](adr/008-domain-exceptions-and-http-error-mapping.md)
 - [ADR-009 — Content extraction (PDF → Markdown) and the ExtractDocument use case](adr/009-content-extraction-and-the-extract-document-use-case.md)
 - [ADR-010 — Composition root: settings, engine lifespan, and startup provisioning](adr/010-composition-root-settings-and-startup-provisioning.md)
+- [ADR-011 — Message bus: commands and events through one `bus.handle()`](adr/011-message-bus-commands-and-events.md)
