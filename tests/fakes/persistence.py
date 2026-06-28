@@ -23,10 +23,12 @@ class InMemoryDocumentRepository(DocumentRepository):
         self._store = store
         self._pending: dict[DocumentId, Document] = {}
         self._pending_deletes: set[DocumentId] = set()
+        self.seen: dict[DocumentId, Document] = {}
 
     async def save(self, document: Document) -> None:
         self._pending_deletes.discard(document.id)
         self._pending[document.id] = document
+        self.seen[document.id] = document
 
     async def delete(self, document: Document) -> None:
         self._pending.pop(document.id, None)
@@ -35,14 +37,16 @@ class InMemoryDocumentRepository(DocumentRepository):
     async def find_by_id(self, document_id: DocumentId) -> Document | None:
         if document_id in self._pending_deletes:
             return None
-        if document_id in self._pending:
-            return self._pending[document_id]
-        return self._store.get(document_id)
+        document = self._pending.get(document_id) or self._store.get(document_id)
+        if document is not None:
+            self.seen[document.id] = document
+        return document
 
     async def find_all(self) -> list[Document]:
         visible = {**self._store, **self._pending}
         for document_id in self._pending_deletes:
             visible.pop(document_id, None)
+        self.seen.update(visible)
         return list(visible.values())
 
     def flush(self) -> None:

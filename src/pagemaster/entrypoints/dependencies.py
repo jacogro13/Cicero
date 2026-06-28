@@ -18,12 +18,14 @@ from pagemaster.adapters.persistence.engine import (
 )
 from pagemaster.adapters.persistence.unit_of_work import make_sqlalchemy_uow_factory
 from pagemaster.adapters.storage.s3 import S3DocumentStorage
+from pagemaster.domain.document import commands
 from pagemaster.domain.document.ports.document_storage import DocumentStorage
 from pagemaster.domain.ports.unit_of_work import UnitOfWorkFactory
 from pagemaster.entrypoints.settings import Settings, get_settings
 from pagemaster.services.document.delete_document import DeleteDocument
 from pagemaster.services.document.list_documents import ListDocuments
 from pagemaster.services.document.upload_document import UploadDocument
+from pagemaster.services.messagebus import MessageBus
 
 # One engine + session factory per process, created lazily and disposed on shutdown.
 _engine: AsyncEngine | None = None
@@ -74,11 +76,21 @@ def get_document_storage(
     return _make_storage(settings)
 
 
-def get_upload_document(
+def bootstrap(uow_factory: UnitOfWorkFactory, storage: DocumentStorage) -> MessageBus:
+    """Wire deps into the handlers and build the command/event maps (ADR-011)."""
+    upload = UploadDocument(storage)
+    return MessageBus(
+        uow_factory,
+        command_handlers={commands.UploadDocument: upload},
+        event_handlers={},
+    )
+
+
+def get_message_bus(
     uow_factory: UnitOfWorkFactory = Depends(get_uow_factory),
     storage: DocumentStorage = Depends(get_document_storage),
-) -> UploadDocument:
-    return UploadDocument(uow_factory, storage)
+) -> MessageBus:
+    return bootstrap(uow_factory, storage)
 
 
 def get_list_documents(

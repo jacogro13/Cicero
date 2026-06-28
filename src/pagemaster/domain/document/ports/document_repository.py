@@ -8,12 +8,15 @@ class DocumentRepository(ABC):
     """Port: the collection of ``Document`` aggregates (ADR-003).
 
     Reached through a :class:`UnitOfWork` (``uow.documents``), never constructed
-    directly.
+    directly. Implementations track the aggregates they have ``seen`` (saved or
+    fetched) so the UoW can drain their events after a commit (ADR-011).
     """
+
+    seen: dict[DocumentId, Document]
 
     @abstractmethod
     async def save(self, document: Document) -> None:
-        """Insert or update a document record."""
+        """Insert or update a document record (and mark it seen)."""
         ...
 
     @abstractmethod

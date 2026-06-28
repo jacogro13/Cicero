@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from types import TracebackType
 from typing import Self
 
 from pagemaster.domain.document.ports.document_repository import DocumentRepository
+from pagemaster.domain.messages import Event
 
 
 class UnitOfWork(ABC):
@@ -34,6 +35,11 @@ class UnitOfWork(ABC):
 
     @abstractmethod
     async def rollback(self) -> None: ...
+
+    def collect_new_events(self) -> Iterator[Event]:
+        """Drain domain events off the aggregates touched in this transaction (ADR-011)."""
+        for document in list(self.documents.seen.values()):
+            yield from document.collect_events()
 
 
 UnitOfWorkFactory = Callable[[], UnitOfWork]

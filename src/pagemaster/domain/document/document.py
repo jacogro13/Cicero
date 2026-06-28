@@ -4,7 +4,9 @@ from dataclasses import dataclass
 
 from pagemaster.domain.document.document_id import DocumentId
 from pagemaster.domain.document.document_status import DocumentStatus
+from pagemaster.domain.document.events import DocumentUploaded
 from pagemaster.domain.document.exceptions import InvalidDocumentTitle
+from pagemaster.domain.messages import Event
 
 
 @dataclass
@@ -14,17 +16,35 @@ class Document:
     Construct via :meth:`create` so the id is generated and the title is
     validated; do not instantiate directly. Status changes go through the
     ``mark_*`` methods rather than assigning :attr:`status` directly (ADR-002).
+    The aggregate records domain events off its lifecycle (ADR-011); the
+    Unit of Work drains them after a commit.
     """
 
     id: DocumentId
     title: str
     status: DocumentStatus = DocumentStatus.UPLOADED
 
+    @property
+    def events(self) -> list[Event]:
+        """Pending domain events. Lazily created so ORM-loaded instances (built
+        without ``__init__``) work; not a field, so it stays out of equality."""
+        if not hasattr(self, "_events"):
+            self._events: list[Event] = []
+        return self._events
+
+    def collect_events(self) -> list[Event]:
+        """Return the pending events and clear them."""
+        collected = self.events[:]
+        self.events.clear()
+        return collected
+
     @classmethod
     def create(cls, title: str) -> Document:
         if not title.strip():
             raise InvalidDocumentTitle("title must not be empty")
-        return cls(id=DocumentId.new(), title=title)
+        document = cls(id=DocumentId.new(), title=title)
+        document.events.append(DocumentUploaded(document_id=document.id))
+        return document
 
     @property
     def source_key(self) -> str:

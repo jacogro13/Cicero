@@ -36,8 +36,8 @@ the state change surfaces the facts it caused.
 **The `MessageBus` (`services/`) has one entry point, `handle()`.** It opens a UoW
 from the factory, dispatches the message (command → its one handler; event → each
 handler), then drains the UoW's new events and keeps going until the queue empties.
-**Handlers stay class-based use cases** with a `handle(message, uow)` shape; the
-**composition root bootstraps** them — injecting deps and building the command/event
+**Handlers stay class-based use cases**, callable as `(message, uow)` (via `__call__`);
+the **composition root bootstraps** them — injecting deps and building the command/event
 maps — and hands the bus to the routes (retiring the per-use-case `Depends` providers).
 
 **Introduced incrementally:** first **`UploadDocument` alone** is refactored through
