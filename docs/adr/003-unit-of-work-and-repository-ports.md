@@ -57,7 +57,7 @@ through the UoW, never constructed directly. **Services receive a `uow_factory`*
 one use case can open several sequential transactions (dependencies are
 constructor parameters, ADR-001).
 
-This batch ships only an **in-memory** implementation (a test double that buffers
+This decision ships only an **in-memory** implementation (a test double that buffers
 writes and flushes on commit); a real Postgres adapter lands later behind the same
 ports, with the behaviour re-verified unchanged. Until then there is no
 `adapters/` layer, so the import-linter contract is not yet extended.

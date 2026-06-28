@@ -58,7 +58,7 @@ the full map and [`docs/adr/`](docs/adr/) for the decisions behind it.
 
 ## Status
 
-Work in progress, built batch by batch. Implemented so far:
+Work in progress, built incrementally and test-first. Implemented so far:
 
 - `GET /health` and the app + CI spine.
 - The `Document` aggregate — generated id, validated title, guarded status lifecycle.

@@ -11,9 +11,9 @@
 
 ## Context
 
-Batches #1–#5 built `UploadDocument` and `ListDocuments` as infrastructure-free
-use cases. They now need an HTTP surface: a client must `POST` a file to create a
-document and `GET` the library list. Three questions precede the route code:
+`UploadDocument` and `ListDocuments` exist as infrastructure-free use cases. They
+now need an HTTP surface: a client must `POST` a file to create a document and `GET`
+the library list. Three questions precede the route code:
 
 1. How are routes organised and addressed?
 2. What crosses the wire — and what must not?
