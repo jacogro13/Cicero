@@ -1,4 +1,4 @@
-.PHONY: sync lint test integration dev
+.PHONY: sync lint test integration dev up down
 
 sync:                 ## Install dependencies into the uv venv
 	uv sync
@@ -12,5 +12,11 @@ test:                 ## Run the fast suite (unit + API; no Docker)
 integration:          ## Run integration tests against real infra (needs Docker)
 	uv run pytest tests/integration
 
-dev:                  ## Run the dev server (http://localhost:8000)
+up:                   ## Run the whole stack (api + Postgres + MinIO) in Docker
+	docker compose up --build
+
+down:                 ## Stop the stack and remove its volumes
+	docker compose down -v
+
+dev:                  ## Run the app on the host (needs Postgres + MinIO; see .env.example)
 	uv run uvicorn pagemaster.entrypoints.main:app --reload
