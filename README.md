@@ -18,6 +18,10 @@ article. Built on top: chat over a document, and a podcast for articles.
   imports the wrong way — the rule is executable, not just documented.
 - **Persistence ignorance** — the domain model has zero ORM imports; it is mapped to
   Postgres by SQLAlchemy *imperative mapping* declared entirely in the adapter layer.
+- **Domain events and a message bus** — aggregates record events off their own
+  lifecycle, and one `bus.handle()` routes commands (exactly one handler) and events
+  (zero or more), so new reactions are added by *subscribing*, not by editing the
+  caller. Introduced where the processing pipeline needs it, not speculatively.
 - **The full test pyramid** — fast unit and API tests with in-memory fakes, plus
   **integration tests against real Postgres** in throwaway containers (testcontainers).
 - **Architecture Decision Records** ([`docs/adr/`](docs/adr/)) — the *why* behind each
@@ -66,6 +70,9 @@ Work in progress, built incrementally and test-first. Implemented so far:
   an in-memory fake and a **Postgres adapter** proven against a real database.
 - Use cases (`services/`): `UploadDocument` (file-first over an object-storage port),
   `ListDocuments`, `DeleteDocument`, `ExtractDocument` (PDF → Markdown).
+- A **message bus** — commands and events through one `bus.handle()`; the `Document`
+  aggregate raises domain events, drained by the Unit of Work. `UploadDocument` runs
+  through it as the proof; the pipeline follows.
 - HTTP API: `POST` / `GET` / `DELETE /api/documents`.
 - A **composition root** that runs the app for real — environment-driven settings,
   an engine lifespan, and startup provisioning of the schema + bucket — so
