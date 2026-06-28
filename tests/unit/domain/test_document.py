@@ -5,6 +5,7 @@ import pytest
 from pagemaster.domain.document.document import Document
 from pagemaster.domain.document.document_id import DocumentId
 from pagemaster.domain.document.document_status import DocumentStatus
+from pagemaster.domain.document.events import DocumentUploaded
 from pagemaster.domain.document.exceptions import InvalidDocumentTitle
 
 
@@ -58,3 +59,25 @@ class TestDocumentStatusLifecycle:
         doc.mark_processing()
         doc.mark_failed()
         assert doc.status is DocumentStatus.FAILED
+
+
+class TestDocumentEvents:
+    def test_create_records_a_document_uploaded_event(self):
+        doc = Document.create("Any Title")
+        assert doc.events == [DocumentUploaded(document_id=doc.id)]
+
+    def test_collect_events_returns_and_clears_them(self):
+        doc = Document.create("Any Title")
+
+        collected = doc.collect_events()
+
+        assert collected == [DocumentUploaded(document_id=doc.id)]
+        assert doc.events == []
+
+    def test_events_are_excluded_from_equality(self):
+        # Two documents differing only in pending events are still equal, so a
+        # persisted-vs-loaded comparison is unaffected (ADR-011).
+        first = Document.create("Same Title")
+        second = Document(id=first.id, title=first.title)
+        assert first.events and not second.events
+        assert first == second

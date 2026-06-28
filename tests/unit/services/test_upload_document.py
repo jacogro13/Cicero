@@ -1,13 +1,16 @@
-"""Upload a document → it's stored (ADR-004).
+"""Upload a document → it's stored, now driven through the bus (ADR-004, ADR-011).
 
-``UploadDocument`` stores the source file then persists the metadata; storage
-goes first, so a failed upload can orphan a blob but never persist a document.
+The use case is a command handler: a `commands.UploadDocument` flows through the
+`MessageBus`. Behavior is unchanged — storage goes first, so a failed upload can
+orphan a blob but never persist a document.
 """
 
 import pytest
 
+from pagemaster.domain.document import commands
 from pagemaster.domain.document.document_status import DocumentStatus
 from pagemaster.services.document.upload_document import UploadDocument
+from pagemaster.services.messagebus import MessageBus
 
 from tests.fakes import InMemoryDocumentStorage, make_in_memory_uow_factory
 
@@ -17,39 +20,53 @@ class _ExplodingStorage(InMemoryDocumentStorage):
         raise RuntimeError("object storage is down")
 
 
+def _bus(uow_factory, storage) -> MessageBus:
+    return MessageBus(
+        uow_factory,
+        command_handlers={commands.UploadDocument: UploadDocument(storage)},
+        event_handlers={},
+    )
+
+
 class TestUploadDocument:
     async def test_stores_the_file_under_the_documents_source_key(self):
-        uow_factory = make_in_memory_uow_factory()
         storage = InMemoryDocumentStorage()
-        upload = UploadDocument(uow_factory, storage)
+        bus = _bus(make_in_memory_uow_factory(), storage)
 
-        document = await upload.execute(title="Clean Code", content=b"%PDF-1.4 bytes")
+        document = await bus.handle(
+            commands.UploadDocument(title="Clean Code", content=b"%PDF-1.4 bytes")
+        )
 
         assert await storage.get(document.source_key) == b"%PDF-1.4 bytes"
 
     async def test_persists_the_document_so_it_is_fetchable_later(self):
         uow_factory = make_in_memory_uow_factory()
-        upload = UploadDocument(uow_factory, InMemoryDocumentStorage())
+        bus = _bus(uow_factory, InMemoryDocumentStorage())
 
-        document = await upload.execute(title="Clean Code", content=b"%PDF-1.4 bytes")
+        document = await bus.handle(
+            commands.UploadDocument(title="Clean Code", content=b"%PDF-1.4 bytes")
+        )
 
         async with uow_factory() as uow:
             fetched = await uow.documents.find_by_id(document.id)
         assert fetched == document
 
     async def test_uploaded_document_starts_in_uploaded_status(self):
-        upload = UploadDocument(make_in_memory_uow_factory(), InMemoryDocumentStorage())
+        bus = _bus(make_in_memory_uow_factory(), InMemoryDocumentStorage())
 
-        document = await upload.execute(title="Clean Code", content=b"%PDF-1.4 bytes")
+        document = await bus.handle(
+            commands.UploadDocument(title="Clean Code", content=b"%PDF-1.4 bytes")
+        )
 
         assert document.status is DocumentStatus.UPLOADED
 
     async def test_a_storage_failure_persists_no_document(self):
         store = {}
-        uow_factory = make_in_memory_uow_factory(store)
-        upload = UploadDocument(uow_factory, _ExplodingStorage())
+        bus = _bus(make_in_memory_uow_factory(store), _ExplodingStorage())
 
         with pytest.raises(RuntimeError):
-            await upload.execute(title="Clean Code", content=b"%PDF-1.4 bytes")
+            await bus.handle(
+                commands.UploadDocument(title="Clean Code", content=b"%PDF-1.4 bytes")
+            )
 
         assert store == {}

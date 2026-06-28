@@ -8,6 +8,7 @@ runs extraction, stores the Markdown blob, then commits ``READY`` with a
 
 import pytest
 
+from pagemaster.domain.document import commands
 from pagemaster.domain.document.document_id import DocumentId
 from pagemaster.domain.document.document_status import DocumentStatus
 from pagemaster.domain.document.exceptions import DocumentNotFound
@@ -22,9 +23,8 @@ from tests.fakes import (
 
 
 async def _upload(uow_factory, storage):
-    return await UploadDocument(uow_factory, storage).execute(
-        title="Clean Code", content=b"%PDF-1.4 source bytes"
-    )
+    command = commands.UploadDocument(title="Clean Code", content=b"%PDF-1.4 source bytes")
+    return await UploadDocument(storage)(command, uow_factory())
 
 
 class _ExplodingExtractor(StubDocumentExtractor):

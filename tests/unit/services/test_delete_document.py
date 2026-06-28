@@ -7,6 +7,7 @@ id is unknown, leaving the domain to signal the failure (HTTP is mapped elsewher
 
 import pytest
 
+from pagemaster.domain.document import commands
 from pagemaster.domain.document.document_id import DocumentId
 from pagemaster.domain.document.exceptions import DocumentNotFound
 from pagemaster.services.document.delete_document import DeleteDocument
@@ -16,9 +17,8 @@ from tests.fakes import InMemoryDocumentStorage, make_in_memory_uow_factory
 
 
 async def _upload(uow_factory, storage):
-    return await UploadDocument(uow_factory, storage).execute(
-        title="Clean Code", content=b"%PDF-1.4 bytes"
-    )
+    command = commands.UploadDocument(title="Clean Code", content=b"%PDF-1.4 bytes")
+    return await UploadDocument(storage)(command, uow_factory())
 
 
 class TestDeleteDocument:

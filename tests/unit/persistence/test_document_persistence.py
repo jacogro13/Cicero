@@ -8,6 +8,7 @@ import pytest
 
 from pagemaster.domain.document.document import Document
 from pagemaster.domain.document.document_id import DocumentId
+from pagemaster.domain.document.events import DocumentUploaded
 
 from tests.fakes import make_in_memory_uow_factory
 
@@ -42,6 +43,27 @@ class TestSaveAndFetchDocument:
 
         async with uow_factory() as uow:
             assert await uow.documents.find_by_id(doc.id) is None
+
+    async def test_collect_new_events_drains_events_off_seen_aggregates(self):
+        uow_factory = make_in_memory_uow_factory()
+        doc = Document.create("Domain-Driven Design")
+
+        async with uow_factory() as uow:
+            await uow.documents.save(doc)
+            events = list(uow.collect_new_events())
+
+        assert events == [DocumentUploaded(document_id=doc.id)]
+
+    async def test_events_are_collected_only_once(self):
+        uow_factory = make_in_memory_uow_factory()
+
+        async with uow_factory() as uow:
+            await uow.documents.save(Document.create("Refactoring"))
+            first = list(uow.collect_new_events())
+            second = list(uow.collect_new_events())
+
+        assert len(first) == 1
+        assert second == []
 
     async def test_an_exception_in_the_block_discards_the_writes(self):
         uow_factory = make_in_memory_uow_factory()
