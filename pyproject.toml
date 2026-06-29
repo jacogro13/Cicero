@@ -1,5 +1,5 @@
 [project]
-name = "pagemaster"
+name = "cicero"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
@@ -34,15 +34,15 @@ asyncio_mode = "auto"
 # only inward on `domain`, neither imports the other — composition is wired in
 # `entrypoints`).
 [tool.importlinter]
-root_package = "pagemaster"
+root_package = "cicero"
 
 [[tool.importlinter.contracts]]
 name = "Hexagonal layering: outer imports inner only"
 type = "layers"
 layers = [
-    "pagemaster.entrypoints",
-    "pagemaster.services | pagemaster.adapters",
-    "pagemaster.domain",
+    "cicero.entrypoints",
+    "cicero.services | cicero.adapters",
+    "cicero.domain",
 ]
 
 [tool.setuptools.packages.find]

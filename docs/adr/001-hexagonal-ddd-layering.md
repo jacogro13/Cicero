@@ -6,7 +6,7 @@
 
 ## Context
 
-PageMaster touches a database, object storage, and an LLM — none of which is the
+Cicero touches a database, object storage, and an LLM — none of which is the
 *point*. The point is the domain: what a document is, the states it moves
 through, and its rules. Writing domain logic directly against FastAPI requests
 and SQLAlchemy sessions makes every rule slow to test (a database must run) and
@@ -41,7 +41,7 @@ adapters depend on ports *defined in the domain*. The language won't enforce it,
 so an **import-linter** contract (`pyproject.toml`) checks it in CI via
 `make lint`, listing only the layers that exist and growing as they land.
 
-**Packaging:** a **src-layout** (`src/pagemaster/`) forces tests to import the
+**Packaging:** a **src-layout** (`src/cicero/`) forces tests to import the
 *installed* package, so the test environment matches what ships.
 
 Only the layers a capability needs are materialized; the structure grows

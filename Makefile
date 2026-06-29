@@ -19,4 +19,4 @@ down:                 ## Stop the stack and remove its volumes
 	docker compose down -v
 
 dev:                  ## Run the app on the host (needs Postgres + MinIO; see .env.example)
-	uv run uvicorn pagemaster.entrypoints.main:app --reload
+	uv run uvicorn cicero.entrypoints.main:app --reload

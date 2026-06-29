@@ -8,12 +8,12 @@ runs extraction, stores the Markdown blob, then commits ``READY`` with a
 
 import pytest
 
-from pagemaster.domain.document import commands
-from pagemaster.domain.document.document_id import DocumentId
-from pagemaster.domain.document.document_status import DocumentStatus
-from pagemaster.domain.document.exceptions import DocumentNotFound
-from pagemaster.services.document.extract_document import ExtractDocument
-from pagemaster.services.document.upload_document import UploadDocument
+from cicero.domain.document import commands
+from cicero.domain.document.document_id import DocumentId
+from cicero.domain.document.document_status import DocumentStatus
+from cicero.domain.document.exceptions import DocumentNotFound
+from cicero.services.document.extract_document import ExtractDocument
+from cicero.services.document.upload_document import UploadDocument
 
 from tests.fakes import (
     InMemoryDocumentStorage,

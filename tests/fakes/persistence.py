@@ -9,10 +9,10 @@ from __future__ import annotations
 from types import TracebackType
 from typing import Self
 
-from pagemaster.domain.document.document import Document
-from pagemaster.domain.document.document_id import DocumentId
-from pagemaster.domain.document.ports.document_repository import DocumentRepository
-from pagemaster.domain.ports.unit_of_work import UnitOfWork, UnitOfWorkFactory
+from cicero.domain.document.document import Document
+from cicero.domain.document.document_id import DocumentId
+from cicero.domain.document.ports.document_repository import DocumentRepository
+from cicero.domain.ports.unit_of_work import UnitOfWork, UnitOfWorkFactory
 
 
 class InMemoryDocumentRepository(DocumentRepository):

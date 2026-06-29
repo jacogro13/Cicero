@@ -7,7 +7,7 @@ in-memory double's contract, now proven against MinIO over the wire.
 import pytest
 from botocore.exceptions import ClientError
 
-from pagemaster.adapters.storage.s3 import S3DocumentStorage
+from cicero.adapters.storage.s3 import S3DocumentStorage
 
 
 @pytest.fixture

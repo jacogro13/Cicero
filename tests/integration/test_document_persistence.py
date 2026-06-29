@@ -6,9 +6,9 @@ a swappable adapter behind the same ports, so it must behave identically (ADR-00
 
 import pytest
 
-from pagemaster.domain.document.document import Document
-from pagemaster.domain.document.document_id import DocumentId
-from pagemaster.domain.ports.unit_of_work import UnitOfWorkFactory
+from cicero.domain.document.document import Document
+from cicero.domain.document.document_id import DocumentId
+from cicero.domain.ports.unit_of_work import UnitOfWorkFactory
 
 
 class TestDocumentPersistenceOnPostgres:

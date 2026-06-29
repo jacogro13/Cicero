@@ -4,7 +4,7 @@ key (ADR-004); ``get`` joined the port for extraction (ADR-009).
 
 from __future__ import annotations
 
-from pagemaster.domain.document.ports.document_storage import DocumentStorage
+from cicero.domain.document.ports.document_storage import DocumentStorage
 
 
 class InMemoryDocumentStorage(DocumentStorage):

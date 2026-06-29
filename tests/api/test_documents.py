@@ -9,9 +9,9 @@ import uuid
 
 from fastapi.testclient import TestClient
 
-from pagemaster.domain.document.document_status import DocumentStatus
-from pagemaster.entrypoints.dependencies import get_document_storage, get_uow_factory
-from pagemaster.entrypoints.main import create_app
+from cicero.domain.document.document_status import DocumentStatus
+from cicero.entrypoints.dependencies import get_document_storage, get_uow_factory
+from cicero.entrypoints.main import create_app
 
 from tests.fakes import InMemoryDocumentStorage, make_in_memory_uow_factory
 

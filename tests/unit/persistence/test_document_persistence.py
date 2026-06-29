@@ -6,9 +6,9 @@ commit — a forgotten commit or an exception mid-block — discards the writes.
 
 import pytest
 
-from pagemaster.domain.document.document import Document
-from pagemaster.domain.document.document_id import DocumentId
-from pagemaster.domain.document.events import DocumentUploaded
+from cicero.domain.document.document import Document
+from cicero.domain.document.document_id import DocumentId
+from cicero.domain.document.events import DocumentUploaded
 
 from tests.fakes import make_in_memory_uow_factory
 

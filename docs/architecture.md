@@ -1,15 +1,15 @@
-# PageMaster — Architecture
+# Cicero — Architecture
 
 > A living map of the system. It grows as capabilities are built; detailed
 > decisions live in the [Architecture Decision Records](#decision-records), each
 > written when its slice lands. Anything marked **Planned** is a committed
 > direction, not yet implemented — its ADR is written when that slice is built.
 
-## What PageMaster is
+## What Cicero is
 
 A self-contained personal library that turns documents into AI-generated
 summaries you can read quickly. You add documents (PDF uploads or web articles);
-PageMaster extracts their text and uses it as raw material to generate concise
+Cicero extracts their text and uses it as raw material to generate concise
 summaries — per chapter for a book, or a single summary for an article — and
 those summaries are what you read in the app (or chat with the document about;
 articles can also be turned into a podcast). The extracted text itself is never
@@ -23,7 +23,7 @@ unless a real OpenAI-compatible endpoint is configured.
 The backend is **ports-and-adapters / DDD**, dependencies pointing inward —
 `domain ← services ← adapters / entrypoints` — with the rule enforced in CI by
 import-linter. See **[ADR-001](adr/001-hexagonal-ddd-layering.md)** for the full
-rationale and the `src/pagemaster/` layout.
+rationale and the `src/cicero/` layout.
 
 ```mermaid
 flowchart LR

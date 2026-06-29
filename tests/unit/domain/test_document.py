@@ -2,11 +2,11 @@ import uuid
 
 import pytest
 
-from pagemaster.domain.document.document import Document
-from pagemaster.domain.document.document_id import DocumentId
-from pagemaster.domain.document.document_status import DocumentStatus
-from pagemaster.domain.document.events import DocumentUploaded
-from pagemaster.domain.document.exceptions import InvalidDocumentTitle
+from cicero.domain.document.document import Document
+from cicero.domain.document.document_id import DocumentId
+from cicero.domain.document.document_status import DocumentStatus
+from cicero.domain.document.events import DocumentUploaded
+from cicero.domain.document.exceptions import InvalidDocumentTitle
 
 
 class TestDocumentCreate:

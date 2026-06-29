@@ -4,7 +4,7 @@ Markdown without touching a real PDF library (ADR-009).
 
 from __future__ import annotations
 
-from pagemaster.domain.document.ports.document_extractor import DocumentExtractor
+from cicero.domain.document.ports.document_extractor import DocumentExtractor
 
 
 class StubDocumentExtractor(DocumentExtractor):

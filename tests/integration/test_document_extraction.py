@@ -7,7 +7,7 @@ test carries no binary fixture.
 
 import fitz  # PyMuPDF
 
-from pagemaster.adapters.extraction.pymupdf import PyMuPDFExtractor
+from cicero.adapters.extraction.pymupdf import PyMuPDFExtractor
 
 
 def _make_pdf(text: str) -> bytes:
@@ -21,8 +21,8 @@ def _make_pdf(text: str) -> bytes:
 
 class TestPyMuPDFExtractor:
     async def test_extracts_the_pdf_text_as_markdown(self):
-        pdf = _make_pdf("Hello PageMaster")
+        pdf = _make_pdf("Hello Cicero")
 
         markdown = await PyMuPDFExtractor().extract_markdown(pdf)
 
-        assert "Hello PageMaster" in markdown
+        assert "Hello Cicero" in markdown

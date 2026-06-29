@@ -7,11 +7,11 @@ id is unknown, leaving the domain to signal the failure (HTTP is mapped elsewher
 
 import pytest
 
-from pagemaster.domain.document import commands
-from pagemaster.domain.document.document_id import DocumentId
-from pagemaster.domain.document.exceptions import DocumentNotFound
-from pagemaster.services.document.delete_document import DeleteDocument
-from pagemaster.services.document.upload_document import UploadDocument
+from cicero.domain.document import commands
+from cicero.domain.document.document_id import DocumentId
+from cicero.domain.document.exceptions import DocumentNotFound
+from cicero.services.document.delete_document import DeleteDocument
+from cicero.services.document.upload_document import UploadDocument
 
 from tests.fakes import InMemoryDocumentStorage, make_in_memory_uow_factory
 

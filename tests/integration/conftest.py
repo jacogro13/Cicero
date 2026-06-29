@@ -16,9 +16,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from testcontainers.minio import MinioContainer
 from testcontainers.postgres import PostgresContainer
 
-from pagemaster.adapters.persistence.orm import metadata, start_mappers
-from pagemaster.adapters.persistence.unit_of_work import make_sqlalchemy_uow_factory
-from pagemaster.domain.ports.unit_of_work import UnitOfWorkFactory
+from cicero.adapters.persistence.orm import metadata, start_mappers
+from cicero.adapters.persistence.unit_of_work import make_sqlalchemy_uow_factory
+from cicero.domain.ports.unit_of_work import UnitOfWorkFactory
 
 
 @pytest.fixture(scope="session")

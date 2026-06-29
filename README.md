@@ -1,6 +1,6 @@
-# PageMaster
+# Cicero
 
-PageMaster turns documents — PDF uploads or web articles — into AI-generated
+Cicero turns documents — PDF uploads or web articles — into AI-generated
 summaries you actually read: per-chapter for a book, a single summary for an
 article. Built on top: chat over a document, and a podcast for articles.
 
@@ -34,7 +34,7 @@ article. Built on top: chat over a document, and a podcast for articles.
 
 ## Architecture
 
-Ports-and-adapters under `src/pagemaster/`, dependencies pointing inward only.
+Ports-and-adapters under `src/cicero/`, dependencies pointing inward only.
 `services` and `adapters` are independent siblings; composition happens in
 `entrypoints`.
 

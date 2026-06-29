@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from pagemaster.entrypoints.main import create_app
+from cicero.entrypoints.main import create_app
 
 
 def test_health_endpoint_returns_ok():

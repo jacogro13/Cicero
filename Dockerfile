@@ -15,4 +15,4 @@ EXPOSE 8000
 
 # The app provisions its schema + bucket on startup (ADR-010), so no entrypoint
 # migration step — just run it.
-CMD ["uv", "run", "uvicorn", "pagemaster.entrypoints.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "uvicorn", "cicero.entrypoints.main:app", "--host", "0.0.0.0", "--port", "8000"]

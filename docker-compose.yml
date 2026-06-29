@@ -1,11 +1,11 @@
-name: pagemaster
+name: cicero
 
 # Self-contained stack: clone → `docker compose up` runs the app over a local
 # Postgres and a local MinIO, zero external services (ADR-010). The api provisions
 # its own schema + bucket on startup, so there is no init container.
 
 networks:
-  pagemaster:
+  cicero:
 
 volumes:
   postgres_data:
@@ -15,14 +15,14 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-pagemaster}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pagemaster}
-      POSTGRES_DB: ${POSTGRES_DB:-pagemaster}
+      POSTGRES_USER: ${POSTGRES_USER:-cicero}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cicero}
+      POSTGRES_DB: ${POSTGRES_DB:-cicero}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "${DB_HOST_PORT:-5432}:5432"
-    networks: [pagemaster]
+    networks: [cicero]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
       interval: 5s
@@ -33,14 +33,14 @@ services:
     image: minio/minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-pagemaster}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-pagemaster-secret}
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-cicero}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-cicero-secret}
     volumes:
       - minio_data:/data
     ports:
       - "${MINIO_HOST_PORT:-9000}:9000"        # S3 API
       - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"  # web console
-    networks: [pagemaster]
+    networks: [cicero]
     healthcheck:
       test: ["CMD-SHELL", "mc ready local || exit 1"]
       interval: 5s
@@ -55,12 +55,12 @@ services:
       minio:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pagemaster}:${POSTGRES_PASSWORD:-pagemaster}@db:5432/${POSTGRES_DB:-pagemaster}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cicero}:${POSTGRES_PASSWORD:-cicero}@db:5432/${POSTGRES_DB:-cicero}
       S3_ENDPOINT_URL: http://minio:9000
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-pagemaster}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-pagemaster-secret}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-cicero}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-cicero-secret}
       S3_BUCKET: ${S3_BUCKET:-documents}
       S3_REGION: ${S3_REGION:-us-east-1}
     ports:
       - "${API_HOST_PORT:-8000}:8000"
-    networks: [pagemaster]
+    networks: [cicero]

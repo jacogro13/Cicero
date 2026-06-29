@@ -7,10 +7,10 @@ orphan a blob but never persist a document.
 
 import pytest
 
-from pagemaster.domain.document import commands
-from pagemaster.domain.document.document_status import DocumentStatus
-from pagemaster.services.document.upload_document import UploadDocument
-from pagemaster.services.messagebus import MessageBus
+from cicero.domain.document import commands
+from cicero.domain.document.document_status import DocumentStatus
+from cicero.services.document.upload_document import UploadDocument
+from cicero.services.messagebus import MessageBus
 
 from tests.fakes import InMemoryDocumentStorage, make_in_memory_uow_factory
 

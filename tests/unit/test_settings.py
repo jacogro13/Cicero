@@ -8,10 +8,10 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from pagemaster.entrypoints.settings import Settings
+from cicero.entrypoints.settings import Settings
 
 _REQUIRED = {
-    "DATABASE_URL": "postgresql+asyncpg://u:p@db:5432/pagemaster",
+    "DATABASE_URL": "postgresql+asyncpg://u:p@db:5432/cicero",
     "S3_ENDPOINT_URL": "http://minio:9000",
     "S3_ACCESS_KEY_ID": "key",
     "S3_SECRET_ACCESS_KEY": "secret",

@@ -4,8 +4,8 @@
 only a ``uow_factory`` (no storage) and opens a single transaction.
 """
 
-from pagemaster.domain.document.document import Document
-from pagemaster.services.document.list_documents import ListDocuments
+from cicero.domain.document.document import Document
+from cicero.services.document.list_documents import ListDocuments
 
 from tests.fakes import make_in_memory_uow_factory
 

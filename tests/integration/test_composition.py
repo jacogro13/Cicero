@@ -16,8 +16,8 @@ import boto3
 import pytest
 from fastapi.testclient import TestClient
 
-from pagemaster.entrypoints.main import create_app
-from pagemaster.entrypoints.settings import get_settings
+from cicero.entrypoints.main import create_app
+from cicero.entrypoints.settings import get_settings
 
 _PDF = ("clean-code.pdf", b"%PDF-1.4 bytes", "application/pdf")
 
