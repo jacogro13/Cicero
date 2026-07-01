@@ -1,9 +1,10 @@
-"""Extract a document → Markdown (ADR-009).
+"""Extract a document → Markdown, the DocumentUploaded event handler (ADR-009, ADR-012).
 
 ``ExtractDocument`` drives the status machine for real: it commits ``PROCESSING``,
-runs extraction, stores the Markdown blob, then commits ``READY`` with a
-``content_key`` — or ``FAILED`` if extraction raises. Storage-first mirrors
-``UploadDocument`` (ADR-004): a READY document never points at a missing blob.
+runs extraction, stores the Markdown blob, then commits ``READY`` — or ``FAILED``
+if extraction raises. Storage-first mirrors ``UploadDocument`` (ADR-004): a READY
+document never points at a missing blob. The bus supplies the UoW per call; the
+extractor and storage are injected at bootstrap.
 """
 
 import pytest
@@ -11,6 +12,7 @@ import pytest
 from cicero.domain.document import commands
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.document_status import DocumentStatus
+from cicero.domain.document.events import DocumentUploaded
 from cicero.domain.document.exceptions import DocumentNotFound
 from cicero.services.document.extract_document import ExtractDocument
 from cicero.services.document.upload_document import UploadDocument
@@ -27,6 +29,11 @@ async def _upload(uow_factory, storage):
     return await UploadDocument(storage)(command, uow_factory())
 
 
+async def _extract(uow_factory, storage, extractor, document_id):
+    event = DocumentUploaded(document_id=document_id)
+    await ExtractDocument(storage, extractor)(event, uow_factory())
+
+
 class _ExplodingExtractor(StubDocumentExtractor):
     async def extract_markdown(self, data: bytes) -> str:
         raise RuntimeError("extraction failed")
@@ -38,9 +45,9 @@ class TestExtractDocument:
         storage = InMemoryDocumentStorage()
         document = await _upload(uow_factory, storage)
 
-        await ExtractDocument(
-            uow_factory, storage, StubDocumentExtractor("# Clean Code")
-        ).execute(document.id)
+        await _extract(
+            uow_factory, storage, StubDocumentExtractor("# Clean Code"), document.id
+        )
 
         async with uow_factory() as uow:
             extracted = await uow.documents.find_by_id(document.id)
@@ -51,9 +58,9 @@ class TestExtractDocument:
         storage = InMemoryDocumentStorage()
         document = await _upload(uow_factory, storage)
 
-        await ExtractDocument(
-            uow_factory, storage, StubDocumentExtractor("# Clean Code\n\nBody.")
-        ).execute(document.id)
+        await _extract(
+            uow_factory, storage, StubDocumentExtractor("# Clean Code\n\nBody."), document.id
+        )
 
         async with uow_factory() as uow:
             extracted = await uow.documents.find_by_id(document.id)
@@ -74,9 +81,7 @@ class TestExtractDocument:
                     seen.append(mid.status)
                 return "# md"
 
-        await ExtractDocument(uow_factory, storage, _StatusSpyExtractor()).execute(
-            document.id
-        )
+        await _extract(uow_factory, storage, _StatusSpyExtractor(), document.id)
 
         assert seen == [DocumentStatus.PROCESSING]
 
@@ -85,9 +90,7 @@ class TestExtractDocument:
         storage = InMemoryDocumentStorage()
         document = await _upload(uow_factory, storage)
 
-        await ExtractDocument(uow_factory, storage, _ExplodingExtractor()).execute(
-            document.id
-        )
+        await _extract(uow_factory, storage, _ExplodingExtractor(), document.id)
 
         async with uow_factory() as uow:
             extracted = await uow.documents.find_by_id(document.id)
@@ -96,11 +99,10 @@ class TestExtractDocument:
         assert list(storage.objects) == [document.source_key]
 
     async def test_unknown_id_raises_document_not_found(self):
-        extract = ExtractDocument(
-            make_in_memory_uow_factory(),
-            InMemoryDocumentStorage(),
-            StubDocumentExtractor("# md"),
-        )
+        extract = ExtractDocument(InMemoryDocumentStorage(), StubDocumentExtractor("# md"))
 
         with pytest.raises(DocumentNotFound):
-            await extract.execute(DocumentId.new())
+            await extract(
+                DocumentUploaded(document_id=DocumentId.new()),
+                make_in_memory_uow_factory()(),
+            )

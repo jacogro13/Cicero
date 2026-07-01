@@ -10,10 +10,18 @@ import uuid
 from fastapi.testclient import TestClient
 
 from cicero.domain.document.document_status import DocumentStatus
-from cicero.entrypoints.dependencies import get_document_storage, get_uow_factory
+from cicero.entrypoints.dependencies import (
+    get_document_extractor,
+    get_document_storage,
+    get_uow_factory,
+)
 from cicero.entrypoints.main import create_app
 
-from tests.fakes import InMemoryDocumentStorage, make_in_memory_uow_factory
+from tests.fakes import (
+    InMemoryDocumentStorage,
+    StubDocumentExtractor,
+    make_in_memory_uow_factory,
+)
 
 _PDF = ("clean-code.pdf", b"%PDF-1.4 bytes", "application/pdf")
 
@@ -22,8 +30,10 @@ def _client() -> TestClient:
     app = create_app()
     uow_factory = make_in_memory_uow_factory()
     storage = InMemoryDocumentStorage()
+    extractor = StubDocumentExtractor("# Clean Code")
     app.dependency_overrides[get_uow_factory] = lambda: uow_factory
     app.dependency_overrides[get_document_storage] = lambda: storage
+    app.dependency_overrides[get_document_extractor] = lambda: extractor
     return TestClient(app)
 
 

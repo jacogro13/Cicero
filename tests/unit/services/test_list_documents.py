@@ -1,13 +1,18 @@
-"""List documents.
+"""List documents, now a command handler (ADR-011, ADR-012).
 
-``ListDocuments`` returns every committed document; it is a read, so it takes
-only a ``uow_factory`` (no storage) and opens a single transaction.
+``ListDocuments`` returns every committed document. It is a read — no deps, no
+commit — but rides the bus like the others; the bus supplies the UoW per call.
 """
 
+from cicero.domain.document import commands
 from cicero.domain.document.document import Document
 from cicero.services.document.list_documents import ListDocuments
 
 from tests.fakes import make_in_memory_uow_factory
+
+
+async def _list(uow_factory):
+    return await ListDocuments()(commands.ListDocuments(), uow_factory())
 
 
 class TestListDocuments:
@@ -20,12 +25,10 @@ class TestListDocuments:
             await uow.documents.save(second)
             await uow.commit()
 
-        documents = await ListDocuments(uow_factory).execute()
+        documents = await _list(uow_factory)
 
         assert len(documents) == 2
         assert {d.id for d in documents} == {first.id, second.id}
 
     async def test_returns_an_empty_list_when_there_are_no_documents(self):
-        documents = await ListDocuments(make_in_memory_uow_factory()).execute()
-
-        assert documents == []
+        assert await _list(make_in_memory_uow_factory()) == []

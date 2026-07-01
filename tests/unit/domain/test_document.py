@@ -5,7 +5,11 @@ import pytest
 from cicero.domain.document.document import Document
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.document_status import DocumentStatus
-from cicero.domain.document.events import DocumentUploaded
+from cicero.domain.document.events import (
+    DocumentUploaded,
+    ExtractionCompleted,
+    ExtractionFailed,
+)
 from cicero.domain.document.exceptions import InvalidDocumentTitle
 
 
@@ -73,6 +77,20 @@ class TestDocumentEvents:
 
         assert collected == [DocumentUploaded(document_id=doc.id)]
         assert doc.events == []
+
+    def test_mark_ready_records_an_extraction_completed_event(self):
+        doc = Document.create("Any Title")
+        doc.collect_events()  # drop the creation event
+        doc.mark_processing()
+        doc.mark_ready()
+        assert doc.events == [ExtractionCompleted(document_id=doc.id)]
+
+    def test_mark_failed_records_an_extraction_failed_event(self):
+        doc = Document.create("Any Title")
+        doc.collect_events()  # drop the creation event
+        doc.mark_processing()
+        doc.mark_failed()
+        assert doc.events == [ExtractionFailed(document_id=doc.id)]
 
     def test_events_are_excluded_from_equality(self):
         # Two documents differing only in pending events are still equal, so a

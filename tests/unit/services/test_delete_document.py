@@ -1,8 +1,9 @@
-"""Delete a document (ADR-008).
+"""Delete a document, now a command handler (ADR-008, ADR-012).
 
 ``DeleteDocument`` removes the metadata then the source file — the mirror of
 ``UploadDocument``'s ordering (ADR-004) — and raises ``DocumentNotFound`` when the
 id is unknown, leaving the domain to signal the failure (HTTP is mapped elsewhere).
+The bus supplies the UoW per call; storage is injected at bootstrap.
 """
 
 import pytest
@@ -21,13 +22,19 @@ async def _upload(uow_factory, storage):
     return await UploadDocument(storage)(command, uow_factory())
 
 
+async def _delete(uow_factory, storage, document_id):
+    await DeleteDocument(storage)(
+        commands.DeleteDocument(document_id=document_id), uow_factory()
+    )
+
+
 class TestDeleteDocument:
     async def test_deleted_document_is_no_longer_persisted(self):
         uow_factory = make_in_memory_uow_factory()
         storage = InMemoryDocumentStorage()
         document = await _upload(uow_factory, storage)
 
-        await DeleteDocument(uow_factory, storage).execute(document.id)
+        await _delete(uow_factory, storage, document.id)
 
         async with uow_factory() as uow:
             assert await uow.documents.find_by_id(document.id) is None
@@ -37,13 +44,10 @@ class TestDeleteDocument:
         storage = InMemoryDocumentStorage()
         document = await _upload(uow_factory, storage)
 
-        await DeleteDocument(uow_factory, storage).execute(document.id)
+        await _delete(uow_factory, storage, document.id)
 
         assert document.source_key not in storage.objects
 
     async def test_unknown_id_raises_document_not_found(self):
-        uow_factory = make_in_memory_uow_factory()
-        delete = DeleteDocument(uow_factory, InMemoryDocumentStorage())
-
         with pytest.raises(DocumentNotFound):
-            await delete.execute(DocumentId.new())
+            await _delete(make_in_memory_uow_factory(), InMemoryDocumentStorage(), DocumentId.new())
