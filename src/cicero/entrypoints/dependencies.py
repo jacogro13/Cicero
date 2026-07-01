@@ -16,13 +16,17 @@ from cicero.adapters.persistence.engine import (
     make_engine,
     make_session_factory,
 )
+from cicero.adapters.extraction.pymupdf import PyMuPDFExtractor
 from cicero.adapters.persistence.unit_of_work import make_sqlalchemy_uow_factory
 from cicero.adapters.storage.s3 import S3DocumentStorage
 from cicero.domain.document import commands
+from cicero.domain.document.events import DocumentUploaded
+from cicero.domain.document.ports.document_extractor import DocumentExtractor
 from cicero.domain.document.ports.document_storage import DocumentStorage
 from cicero.domain.ports.unit_of_work import UnitOfWorkFactory
 from cicero.entrypoints.settings import Settings, get_settings
 from cicero.services.document.delete_document import DeleteDocument
+from cicero.services.document.extract_document import ExtractDocument
 from cicero.services.document.list_documents import ListDocuments
 from cicero.services.document.upload_document import UploadDocument
 from cicero.services.messagebus import MessageBus
@@ -76,31 +80,34 @@ def get_document_storage(
     return _make_storage(settings)
 
 
-def bootstrap(uow_factory: UnitOfWorkFactory, storage: DocumentStorage) -> MessageBus:
-    """Wire deps into the handlers and build the command/event maps (ADR-011)."""
-    upload = UploadDocument(storage)
+def get_document_extractor() -> DocumentExtractor:
+    return PyMuPDFExtractor()
+
+
+def bootstrap(
+    uow_factory: UnitOfWorkFactory,
+    storage: DocumentStorage,
+    extractor: DocumentExtractor,
+) -> MessageBus:
+    """Wire deps into the handlers and build the command/event maps (ADR-011, ADR-012).
+
+    Commands come from the routes (the edge); extraction is an internal reaction —
+    the ``DocumentUploaded`` event handler — so upload *causes* it with no coupling.
+    """
     return MessageBus(
         uow_factory,
-        command_handlers={commands.UploadDocument: upload},
-        event_handlers={},
+        command_handlers={
+            commands.UploadDocument: UploadDocument(storage),
+            commands.ListDocuments: ListDocuments(),
+            commands.DeleteDocument: DeleteDocument(storage),
+        },
+        event_handlers={DocumentUploaded: [ExtractDocument(storage, extractor)]},
     )
 
 
 def get_message_bus(
     uow_factory: UnitOfWorkFactory = Depends(get_uow_factory),
     storage: DocumentStorage = Depends(get_document_storage),
+    extractor: DocumentExtractor = Depends(get_document_extractor),
 ) -> MessageBus:
-    return bootstrap(uow_factory, storage)
-
-
-def get_list_documents(
-    uow_factory: UnitOfWorkFactory = Depends(get_uow_factory),
-) -> ListDocuments:
-    return ListDocuments(uow_factory)
-
-
-def get_delete_document(
-    uow_factory: UnitOfWorkFactory = Depends(get_uow_factory),
-    storage: DocumentStorage = Depends(get_document_storage),
-) -> DeleteDocument:
-    return DeleteDocument(uow_factory, storage)
+    return bootstrap(uow_factory, storage, extractor)

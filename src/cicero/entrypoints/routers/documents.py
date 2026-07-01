@@ -6,14 +6,8 @@ from fastapi import APIRouter, Depends, Form, UploadFile
 
 from cicero.domain.document import commands
 from cicero.domain.document.document_id import DocumentId
-from cicero.entrypoints.dependencies import (
-    get_delete_document,
-    get_list_documents,
-    get_message_bus,
-)
+from cicero.entrypoints.dependencies import get_message_bus
 from cicero.entrypoints.schemas import DocumentResponse
-from cicero.services.document.delete_document import DeleteDocument
-from cicero.services.document.list_documents import ListDocuments
 from cicero.services.messagebus import MessageBus
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -32,15 +26,15 @@ async def create_document(
 
 @router.get("", response_model=list[DocumentResponse])
 async def list_documents(
-    use_case: ListDocuments = Depends(get_list_documents),
+    bus: MessageBus = Depends(get_message_bus),
 ) -> list[DocumentResponse]:
-    documents = await use_case.execute()
+    documents = await bus.handle(commands.ListDocuments())
     return [DocumentResponse.from_domain(document) for document in documents]
 
 
 @router.delete("/{document_id}", status_code=204)
 async def delete_document(
     document_id: UUID,
-    use_case: DeleteDocument = Depends(get_delete_document),
+    bus: MessageBus = Depends(get_message_bus),
 ) -> None:
-    await use_case.execute(DocumentId(document_id))
+    await bus.handle(commands.DeleteDocument(document_id=DocumentId(document_id)))

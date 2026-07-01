@@ -4,7 +4,11 @@ from dataclasses import dataclass
 
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.document_status import DocumentStatus
-from cicero.domain.document.events import DocumentUploaded
+from cicero.domain.document.events import (
+    DocumentUploaded,
+    ExtractionCompleted,
+    ExtractionFailed,
+)
 from cicero.domain.document.exceptions import InvalidDocumentTitle
 from cicero.domain.messages import Event
 
@@ -67,6 +71,8 @@ class Document:
 
     def mark_ready(self) -> None:
         self.status = DocumentStatus.READY
+        self.events.append(ExtractionCompleted(document_id=self.id))
 
     def mark_failed(self) -> None:
         self.status = DocumentStatus.FAILED
+        self.events.append(ExtractionFailed(document_id=self.id))

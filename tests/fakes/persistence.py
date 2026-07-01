@@ -6,6 +6,7 @@ work stays invisible to other transactions (the real behaviour, ADR-003).
 
 from __future__ import annotations
 
+from dataclasses import replace
 from types import TracebackType
 from typing import Self
 
@@ -50,7 +51,11 @@ class InMemoryDocumentRepository(DocumentRepository):
         return list(visible.values())
 
     def flush(self) -> None:
-        self._store.update(self._pending)
+        # Store a detached copy, mirroring the Postgres adapter expunging on commit:
+        # a returned aggregate is then insulated from a later transaction's writes,
+        # and committed state carries no pending events to be drained twice.
+        for document_id, document in self._pending.items():
+            self._store[document_id] = replace(document)
         for document_id in self._pending_deletes:
             self._store.pop(document_id, None)
         self._pending.clear()

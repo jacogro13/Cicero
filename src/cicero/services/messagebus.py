@@ -32,7 +32,8 @@ class MessageBus:
     async def handle(self, message: Message) -> Any:
         """Process a message and every event it transitively raises. Returns the
         originating command's result so a caller can echo the affected resource;
-        results of cascaded commands stay internal (ADR-011)."""
+        results of cascaded commands stay internal (ADR-011). New messages reach the
+        queue only as events the aggregates raise — commands enter at the edge (ADR-012)."""
         uow = self._uow_factory()
         queue: deque[Message] = deque([message])
         result: Any = None

@@ -1,13 +1,13 @@
+from cicero.domain.document import commands
 from cicero.domain.document.document import Document
-from cicero.domain.ports.unit_of_work import UnitOfWorkFactory
+from cicero.domain.ports.unit_of_work import UnitOfWork
 
 
 class ListDocuments:
-    """Use case: return every stored document. A read — no commit needed."""
+    """Handler: return every stored document. A read — no deps, no commit (ADR-012)."""
 
-    def __init__(self, uow_factory: UnitOfWorkFactory) -> None:
-        self._uow_factory = uow_factory
-
-    async def execute(self) -> list[Document]:
-        async with self._uow_factory() as uow:
+    async def __call__(
+        self, command: commands.ListDocuments, uow: UnitOfWork
+    ) -> list[Document]:
+        async with uow:
             return await uow.documents.find_all()
