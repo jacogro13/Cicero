@@ -44,8 +44,8 @@ imports the other); the rule is enforced in CI by import-linter.
 
 | Layer | Responsibility | Status |
 |-------|----------------|--------|
-| `domain/` | Entities, value objects, ports, messages, errors — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; messages `Command`/`Event` + `UploadDocument`/`DocumentUploaded`; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`, `DocumentExtractor`; `DomainError` hierarchy) |
-| `services/` | Command/event handlers + the message bus that routes them | **Exists** (`MessageBus`; handlers `UploadDocument`, `ListDocuments`, `DeleteDocument`, `ExtractDocument`) |
+| `domain/` | Entities, value objects, ports, messages, errors — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; messages `Command`/`Event` + `Upload`/`Extract`/`List`/`Delete` commands, `DocumentUploaded`/`ExtractionCompleted`/`ExtractionFailed` events; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`, `DocumentExtractor`; `DomainError` hierarchy) |
+| `services/` | Command/event handlers + the message bus that routes them | **Exists** (`MessageBus`; command handlers `UploadDocument`, `ListDocuments`, `DeleteDocument`; the `ExtractDocument` event handler on `DocumentUploaded`) |
 | `adapters/` | Implements domain ports against real infra (DB, object storage, extraction, LLM) | **Exists** (`PostgresDocumentRepository`, `SqlAlchemyUnitOfWork`, `S3DocumentStorage`, `PyMuPDFExtractor`; LLM to come) |
 | `entrypoints/` | FastAPI app, routes, schemas, error mapping, the composition root (settings, engine lifespan, startup provisioning, bus bootstrap) | **Exists** (`GET /health`; `POST`/`GET`/`DELETE /api/documents`; live wiring over Postgres + S3) |
 
@@ -162,15 +162,23 @@ handler; an **`Event`** (a past-tense fact — `DocumentUploaded`) to zero or mo
 Messages are pure data in the domain (`domain/<agg>/commands.py` + `events.py`,
 bases in `domain/messages.py`). The **aggregate is the event source**: `Document`
 records events off its own lifecycle (`create()` → `DocumentUploaded`; further
-status methods as consumers arrive). After each handler the bus **drains the Unit
-of Work's new events** — `collect_new_events()` reads them off the aggregates the
-repository has `seen` (saved or fetched) — and keeps processing until the queue
-empties, so one upload can fan out into a chain of reactions. Handlers stay
-class-based use cases, callable as `(message, uow)`; the composition root
-**bootstraps** them (injecting deps, building the command/event maps) and hands the
-bus to the routes. This earns its keep as the pipeline grows (extraction →
-summaries → podcast become event handlers, not fresh wiring). See
-**[ADR-011](adr/011-message-bus-commands-and-events.md)**.
+status methods raise `ExtractionCompleted`/`ExtractionFailed`). After each handler
+the bus **drains the Unit of Work's new events** — `collect_new_events()` reads them
+off the aggregates the repository has `seen` (saved or fetched) — and keeps
+processing until the queue empties, so one upload can fan out into a chain of
+reactions. Handlers stay class-based use cases, callable as `(message, uow)`; the
+composition root **bootstraps** them (injecting deps, building the command/event
+maps) and hands the bus to the routes — **all four** (`UploadDocument`,
+`ExtractDocument`, `ListDocuments`, `DeleteDocument`) now ride it.
+
+The pipeline is wired as events. New messages reach the queue **only** as events the
+aggregates raise — a handler never synthesises a command, so **commands enter at the
+edge** (the routes). Internal reactions are event handlers: **`ExtractDocument`**
+subscribes to `DocumentUploaded`, so upload *causes* extraction without the route
+knowing extraction exists. Moving extraction off the request path will mean adding a
+new entrypoint — a job queue — that issues an extraction command at the edge. See
+**[ADR-011](adr/011-message-bus-commands-and-events.md)** and
+**[ADR-012](adr/012-pipeline-as-events.md)**.
 
 ## Deleting a document
 
@@ -182,20 +190,24 @@ raises `DocumentNotFound`. `DELETE /api/documents/{id}` returns 204.
 
 ## Extracting a document
 
-**`ExtractDocument`** turns an uploaded source into the internal Markdown that
-summarization will read (never shown to the reader). It drives the rest of the
-status machine for real: it commits `PROCESSING` first (so the in-flight state is
-observable), runs the heavy I/O outside any transaction — read the source bytes
-(`DocumentStorage.get`), extract Markdown (the new **`DocumentExtractor`** port),
-write the result blob to `document.content_key` — then commits `READY`. The
-service never mints a storage key: `content_key` is the document's own
-identity-derived address (`documents/{id}/content`). Storage-first mirrors upload
-(ADR-004): the blob is written before `READY` is committed, so a READY document
-never points at a missing content file. Extraction failure commits `FAILED` (status is the outcome channel
-for the background job to come); an unknown id raises `DocumentNotFound`. The real
-extractor is **`PyMuPDFExtractor`** (`pymupdf4llm`, in-process, offloaded to the
-anyio thread); a stub backs the unit tests. See
-**[ADR-009](adr/009-content-extraction-and-the-extract-document-use-case.md)**.
+**`ExtractDocument`** is the **event handler for `DocumentUploaded`** (see
+"Orchestration") — an internal reaction, not a command issued by a route; for now it
+runs inline, on the request path, until the job queue moves it off. It turns an uploaded source into the
+internal Markdown that summarization will read (never shown to the reader), driving
+the rest of the status machine for real: it commits `PROCESSING` first (so the
+in-flight state is observable), runs the heavy I/O outside any transaction — read
+the source bytes (`DocumentStorage.get`), extract Markdown (the
+**`DocumentExtractor`** port), write the result blob to `document.content_key` —
+then commits `READY`, raising `ExtractionCompleted` (the fact summaries will
+subscribe to). The service never mints a storage key: `content_key` is the
+document's own identity-derived address (`documents/{id}/content`). Storage-first
+mirrors upload (ADR-004): the blob is written before `READY` is committed, so a
+READY document never points at a missing content file. Extraction failure commits
+`FAILED` and raises `ExtractionFailed` (status is the outcome channel); an unknown
+id raises `DocumentNotFound`. The real extractor is **`PyMuPDFExtractor`**
+(`pymupdf4llm`, in-process, offloaded to the anyio thread); a stub backs the unit
+tests. See **[ADR-009](adr/009-content-extraction-and-the-extract-document-use-case.md)**
+and **[ADR-012](adr/012-pipeline-as-events.md)**.
 
 ```mermaid
 sequenceDiagram
@@ -231,15 +243,16 @@ file upload), `GET /api/documents` (the library list), and
 `DELETE /api/documents/{id}` (→ 204); `/health` stays
 unprefixed. Each route is thin: parse the request, call the use case, map the
 result to a **`DocumentResponse`** (`id`, `title`, `status`) — the wire shape that
-deliberately omits the internal storage keys and extracted text. Writes go through
-the message bus (`commands.UploadDocument`); reads still call their use case
-directly. Domain failures raised by the handlers are turned into responses by the
-error registry (see "Errors: the domain raises, the entrypoints map"). The bus and
-use cases are assembled in `dependencies.py` and injected with `Depends`; the leaf
-infra providers (`uow_factory`, `storage`) are the swap point — wired to the real adapters
-in the composition root (see "Running the app"), and overridden with the in-memory
-fakes in tests through FastAPI's `dependency_overrides`, so the routes are verified
-with no infrastructure. See
+deliberately omits the internal storage keys and extracted text. **Every route goes
+through the message bus**, issuing a command (`commands.UploadDocument` /
+`ListDocuments` / `DeleteDocument`); `bus.handle()` returns the originating command's
+result the route serializes. Domain failures raised by the handlers are turned into
+responses by the error registry (see "Errors: the domain raises, the entrypoints
+map"). The bus is bootstrapped in `dependencies.py` and injected with `Depends`; the
+leaf infra providers (`uow_factory`, `storage`, `extractor`) are the swap point — wired
+to the real adapters in the composition root (see "Running the app"), and overridden
+with the in-memory fakes in tests through FastAPI's `dependency_overrides`, so the
+routes are verified with no infrastructure. See
 **[ADR-005](adr/005-http-api-routing-schemas-and-di-seam.md)**.
 
 ```mermaid
@@ -329,17 +342,20 @@ the code on purpose. Implemented so far:
   in-process) proven against a real generated PDF in the `tests/integration/` layer.
 - The **message bus** (the `services/` layer): one `MessageBus.handle()` routes a
   `Command` to its single handler and an `Event` to zero or more, draining the
-  Unit of Work's new events after each handler. The `Document` aggregate records a
-  `DocumentUploaded` event on `create()`. Proof: `UploadDocument` is refactored
-  into a command handler reached through the bus (the rest of the pipeline follows).
+  Unit of Work's new events after each handler. The `Document` aggregate raises the
+  events (`DocumentUploaded` on `create()`, `ExtractionCompleted`/`ExtractionFailed`
+  on the outcome). Commands enter only at the edge (the routes); internal reactions
+  are events, so **upload causes extraction** by `ExtractDocument` subscribing to
+  `DocumentUploaded` — no route-level coupling.
 - The use cases (the `services/` layer): **`UploadDocument`**, over the
   `DocumentStorage` port — stores the source file then persists the document,
   file-first so a failure can only orphan a blob; **`ListDocuments`**, a read
-  returning every stored document via `DocumentRepository.find_all`;
+  returning every stored document via `DocumentRepository.find_all`; and
   **`DeleteDocument`**, which removes metadata then the source blob (the mirror of
-  upload's ordering) and raises `DocumentNotFound` for an unknown id; and
-  **`ExtractDocument`**, which drives `PROCESSING → READY/FAILED`, storing the
-  extracted Markdown at `content_key` (file-first, like upload).
+  upload's ordering) and raises `DocumentNotFound` for an unknown id — all command
+  handlers reached through the bus. **`ExtractDocument`**, the `DocumentUploaded`
+  event handler, drives `PROCESSING → READY/FAILED`, storing the extracted Markdown
+  at `content_key` (file-first, like upload).
 - The **composition root** (`entrypoints/`): environment-driven `Settings`, a
   per-process engine wired to the real adapters (the infra seams retired), and a
   `lifespan` that provisions the schema + bucket at startup — so `docker compose up`
@@ -364,3 +380,4 @@ references a decision made later.
 - [ADR-009 — Content extraction (PDF → Markdown) and the ExtractDocument use case](adr/009-content-extraction-and-the-extract-document-use-case.md)
 - [ADR-010 — Composition root: settings, engine lifespan, and startup provisioning](adr/010-composition-root-settings-and-startup-provisioning.md)
 - [ADR-011 — Message bus: commands and events through one `bus.handle()`](adr/011-message-bus-commands-and-events.md)
+- [ADR-012 — The pipeline as events](adr/012-pipeline-as-events.md)
