@@ -13,17 +13,9 @@ logger = logging.getLogger(__name__)
 
 
 class ExtractDocument:
-    """Reacts to ``DocumentUploaded``: extract the source to Markdown, advance status (ADR-009).
-
-    An event handler, not a command — extraction is an internal reaction to a fact
-    the aggregate raised, so it stays off the public command surface (ADR-012).
-    Commits ``PROCESSING`` first (so the in-flight state is observable), then runs
-    the heavy I/O outside any transaction. Storage-first like ``UploadDocument``
-    (ADR-004): the Markdown blob is written before ``READY`` is committed, so a
-    READY document never points at a missing content file. An extraction failure
-    marks ``FAILED`` (status is the outcome channel); an unknown id is raised.
-    Storage and extractor are injected at bootstrap; the bus supplies the UoW,
-    reused across this handler's sequential transactions (ADR-011).
+    """Handler for ``DocumentUploaded``: extract the source to Markdown, driving
+    PROCESSING→READY/FAILED (ADR-009). An internal reaction, not a command (ADR-012);
+    storage-first (ADR-004). Raises ``DocumentNotFound`` for an unknown id.
     """
 
     def __init__(self, storage: DocumentStorage, extractor: DocumentExtractor) -> None:

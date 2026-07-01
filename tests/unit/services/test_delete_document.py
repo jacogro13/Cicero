@@ -1,9 +1,7 @@
-"""Delete a document, now a command handler (ADR-008, ADR-012).
+"""Delete a document — a command handler (ADR-008).
 
-``DeleteDocument`` removes the metadata then the source file — the mirror of
-``UploadDocument``'s ordering (ADR-004) — and raises ``DocumentNotFound`` when the
-id is unknown, leaving the domain to signal the failure (HTTP is mapped elsewhere).
-The bus supplies the UoW per call; storage is injected at bootstrap.
+Removes the metadata then the source blob (ADR-004 ordering); an unknown id raises
+``DocumentNotFound`` — the domain signals it, HTTP is mapped elsewhere.
 """
 
 import pytest

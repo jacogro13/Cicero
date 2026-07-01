@@ -5,12 +5,9 @@ from cicero.domain.ports.unit_of_work import UnitOfWork
 
 
 class DeleteDocument:
-    """Handler: remove a document and its source file (ADR-008).
+    """Handler: remove the metadata, then the source blob — metadata-first (ADR-004, ADR-008).
 
-    Metadata first, then the blob — the mirror of ``UploadDocument``'s ordering
-    (ADR-004): the safe failure mode is an orphaned blob, never a metadata row
-    pointing at a missing file. Raises ``DocumentNotFound`` for an unknown id.
-    Storage is injected at bootstrap; the bus supplies the UoW per call.
+    Raises ``DocumentNotFound`` for an unknown id.
     """
 
     def __init__(self, storage: DocumentStorage) -> None:

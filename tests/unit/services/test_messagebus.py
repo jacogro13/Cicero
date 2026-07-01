@@ -1,9 +1,4 @@
-"""The message bus: one `handle()` for commands and events (ADR-011).
-
-A command goes to exactly one handler; an event to zero or more. After each
-handler the bus drains the UoW's new events and keeps processing, so a handler
-that touches an aggregate causes that aggregate's events to be dispatched.
-"""
+"""The message bus: one ``handle()`` for commands and events (ADR-011)."""
 
 from dataclasses import dataclass
 

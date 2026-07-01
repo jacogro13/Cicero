@@ -57,9 +57,7 @@ class Document:
 
     @property
     def content_key(self) -> str:
-        """Storage key for the extracted text — internal, never shown to the
-        reader (ADR-004). The text exists only once :attr:`status` is READY
-        (ADR-002); the key itself is just the identity-derived address."""
+        """Storage key for the extracted text — internal, never shown to the reader (ADR-004)."""
         return self._storage_key("content")
 
     def _storage_key(self, name: str) -> str:

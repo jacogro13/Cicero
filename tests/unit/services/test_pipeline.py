@@ -1,10 +1,8 @@
 """Upload *causes* extraction — the pipeline as events (ADR-012).
 
-Extraction is the `DocumentUploaded` event handler, so an upload run through a
-fully wired bus advances the document to READY without the route knowing
-extraction exists — and without a command issued from inside a handler (commands
-enter at the edge). The echoed upload result still reflects creation (UPLOADED):
-extraction drives a freshly loaded aggregate, not the returned one.
+Extraction is the ``DocumentUploaded`` event handler, so an upload through a wired
+bus reaches READY; the echoed create result still reflects creation (UPLOADED),
+since extraction drives a freshly loaded aggregate, not the returned one.
 """
 
 from cicero.domain.document import commands

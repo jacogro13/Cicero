@@ -1,8 +1,4 @@
-"""List documents, now a command handler (ADR-011, ADR-012).
-
-``ListDocuments`` returns every committed document. It is a read — no deps, no
-commit — but rides the bus like the others; the bus supplies the UoW per call.
-"""
+"""List documents — a command handler returning every committed document (ADR-012)."""
 
 from cicero.domain.document import commands
 from cicero.domain.document.document import Document

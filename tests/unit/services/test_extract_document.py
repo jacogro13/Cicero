@@ -1,10 +1,7 @@
-"""Extract a document → Markdown, the DocumentUploaded event handler (ADR-009, ADR-012).
+"""Extract a document → Markdown — the ``DocumentUploaded`` event handler (ADR-009).
 
-``ExtractDocument`` drives the status machine for real: it commits ``PROCESSING``,
-runs extraction, stores the Markdown blob, then commits ``READY`` — or ``FAILED``
-if extraction raises. Storage-first mirrors ``UploadDocument`` (ADR-004): a READY
-document never points at a missing blob. The bus supplies the UoW per call; the
-extractor and storage are injected at bootstrap.
+Drives PROCESSING→READY/FAILED with a stub extractor; storage-first, so a READY
+document never points at a missing blob. An unknown id raises ``DocumentNotFound``.
 """
 
 import pytest

@@ -1,8 +1,6 @@
-"""Upload a document → it's stored, now driven through the bus (ADR-004, ADR-011).
+"""Upload a document → it's stored, driven through the bus (ADR-004, ADR-011).
 
-The use case is a command handler: a `commands.UploadDocument` flows through the
-`MessageBus`. Behavior is unchanged — storage goes first, so a failed upload can
-orphan a blob but never persist a document.
+Storage goes first, so a failed upload can orphan a blob but never persist a document.
 """
 
 import pytest

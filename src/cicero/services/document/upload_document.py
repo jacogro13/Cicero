@@ -5,13 +5,7 @@ from cicero.domain.ports.unit_of_work import UnitOfWork
 
 
 class UploadDocument:
-    """Handler: store a document's source file, then persist its metadata (ADR-004, ADR-011).
-
-    Storage is not transactional with the database, so order matters: the file
-    is written before the metadata is committed, leaving at worst an orphaned
-    blob — never a document whose file is missing — if the upload fails. Storage
-    is injected at bootstrap; the bus supplies the Unit of Work per call.
-    """
+    """Handler: store the source file, then commit the metadata — storage-first (ADR-004)."""
 
     def __init__(self, storage: DocumentStorage) -> None:
         self._storage = storage
