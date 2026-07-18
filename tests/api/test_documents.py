@@ -1,8 +1,9 @@
-"""POST /api/documents + GET /api/documents over HTTP (ADR-005).
+"""POST/GET/DELETE /api/documents over HTTP (ADR-005, ADR-013).
 
-The routes are driven with the in-memory fakes injected through FastAPI's
-``dependency_overrides`` seam, so the HTTP layer is verified without a real
-adapter. One shared store/storage per client, so a POST is visible to a later GET.
+The routes are driven with a bus wired over the in-memory fakes, swapped in at the
+``get_message_bus`` seam, so the HTTP layer is verified without real adapters. The job
+queue is left **unstarted**: an upload enqueues extraction but no worker drains it, so
+documents stay UPLOADED — the queue/extraction path is covered in the unit suite.
 """
 
 import uuid
@@ -10,11 +11,8 @@ import uuid
 from fastapi.testclient import TestClient
 
 from cicero.domain.document.document_status import DocumentStatus
-from cicero.entrypoints.dependencies import (
-    get_document_extractor,
-    get_document_storage,
-    get_uow_factory,
-)
+from cicero.entrypoints.dependencies import bootstrap, get_message_bus
+from cicero.entrypoints.job_queue import JobQueue
 from cicero.entrypoints.main import create_app
 
 from tests.fakes import (
@@ -28,12 +26,13 @@ _PDF = ("clean-code.pdf", b"%PDF-1.4 bytes", "application/pdf")
 
 def _client() -> TestClient:
     app = create_app()
-    uow_factory = make_in_memory_uow_factory()
-    storage = InMemoryDocumentStorage()
-    extractor = StubDocumentExtractor("# Clean Code")
-    app.dependency_overrides[get_uow_factory] = lambda: uow_factory
-    app.dependency_overrides[get_document_storage] = lambda: storage
-    app.dependency_overrides[get_document_extractor] = lambda: extractor
+    bus = bootstrap(
+        make_in_memory_uow_factory(),
+        InMemoryDocumentStorage(),
+        StubDocumentExtractor("# Clean Code"),
+        JobQueue(),
+    )
+    app.dependency_overrides[get_message_bus] = lambda: bus
     return TestClient(app)
 
 

@@ -1,4 +1,4 @@
-"""Extract a document → Markdown — the ``DocumentUploaded`` event handler (ADR-009).
+"""Extract a document → Markdown — the ``ExtractDocument`` command handler (ADR-009/013).
 
 Drives PROCESSING→READY/FAILED with a stub extractor; storage-first, so a READY
 document never points at a missing blob. An unknown id raises ``DocumentNotFound``.
@@ -9,7 +9,6 @@ import pytest
 from cicero.domain.document import commands
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.document_status import DocumentStatus
-from cicero.domain.document.events import DocumentUploaded
 from cicero.domain.document.exceptions import DocumentNotFound
 from cicero.services.document.extract_document import ExtractDocument
 from cicero.services.document.upload_document import UploadDocument
@@ -27,8 +26,8 @@ async def _upload(uow_factory, storage):
 
 
 async def _extract(uow_factory, storage, extractor, document_id):
-    event = DocumentUploaded(document_id=document_id)
-    await ExtractDocument(storage, extractor)(event, uow_factory())
+    command = commands.ExtractDocument(document_id=document_id)
+    await ExtractDocument(storage, extractor)(command, uow_factory())
 
 
 class _ExplodingExtractor(StubDocumentExtractor):
@@ -100,6 +99,6 @@ class TestExtractDocument:
 
         with pytest.raises(DocumentNotFound):
             await extract(
-                DocumentUploaded(document_id=DocumentId.new()),
+                commands.ExtractDocument(document_id=DocumentId.new()),
                 make_in_memory_uow_factory()(),
             )

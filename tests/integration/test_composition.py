@@ -9,13 +9,16 @@ the source blob is read back from storage to prove the bucket was provisioned an
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 from uuid import uuid4
 
 import boto3
+import fitz  # PyMuPDF
 import pytest
 from fastapi.testclient import TestClient
 
+from cicero.domain.document.document_status import DocumentStatus
 from cicero.entrypoints.main import create_app
 from cicero.entrypoints.settings import get_settings
 
@@ -67,3 +70,41 @@ def test_live_app_provisions_and_round_trips(live_stack: dict):
     assert created["id"] in [doc["id"] for doc in listed]
     # The bucket was provisioned at startup and the source blob actually landed.
     assert _read_source(live_stack["minio_config"], live_stack["bucket"], created["id"]) == _PDF[1]
+
+
+def _make_pdf(text: str) -> bytes:
+    doc = fitz.open()
+    doc.new_page().insert_text((72, 72), text)
+    try:
+        return doc.tobytes()
+    finally:
+        doc.close()
+
+
+def _poll_status(client: TestClient, document_id: str, *, timeout: float = 10.0) -> str:
+    """Poll the live app until the document leaves a non-terminal state. The queue
+    worker runs on the TestClient's portal loop, so it drains while we sleep."""
+    deadline = time.monotonic() + timeout
+    terminal = {DocumentStatus.READY.value, DocumentStatus.FAILED.value}
+    while time.monotonic() < deadline:
+        listed = client.get("/api/documents").json()
+        status = next(d["status"] for d in listed if d["id"] == document_id)
+        if status in terminal:
+            return status
+        time.sleep(0.1)
+    raise AssertionError(f"document {document_id} never reached a terminal state")
+
+
+def test_upload_is_extracted_off_the_request_path(live_stack: dict):
+    pdf = _make_pdf("Hello Cicero")
+    with TestClient(create_app()) as client:  # __enter__ starts the job queue
+        created = client.post(
+            "/api/documents",
+            data={"title": "Clean Code"},
+            files={"file": ("clean-code.pdf", pdf, "application/pdf")},
+        ).json()
+        # Upload returns immediately; extraction has not run on the request path.
+        assert created["status"] == DocumentStatus.UPLOADED.value
+
+        # The queue worker extracts through real PyMuPDF and MinIO, reaching READY.
+        assert _poll_status(client, created["id"]) == DocumentStatus.READY.value
