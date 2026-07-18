@@ -1,9 +1,9 @@
 import logging
 from collections.abc import Callable
 
+from cicero.domain.document import commands
 from cicero.domain.document.document import Document
 from cicero.domain.document.document_id import DocumentId
-from cicero.domain.document.events import DocumentUploaded
 from cicero.domain.document.exceptions import DocumentNotFound
 from cicero.domain.document.ports.document_extractor import DocumentExtractor
 from cicero.domain.document.ports.document_storage import DocumentStorage
@@ -13,17 +13,18 @@ logger = logging.getLogger(__name__)
 
 
 class ExtractDocument:
-    """Handler for ``DocumentUploaded``: extract the source to Markdown, driving
-    PROCESSING→READY/FAILED (ADR-009). An internal reaction, not a command (ADR-012);
-    storage-first (ADR-004). Raises ``DocumentNotFound`` for an unknown id.
+    """Handler for the ``ExtractDocument`` command: extract the source to Markdown,
+    driving PROCESSING→READY/FAILED (ADR-009). The job-queue worker issues the command
+    off the request path (ADR-013); storage-first (ADR-004). Raises ``DocumentNotFound``
+    for an unknown id.
     """
 
     def __init__(self, storage: DocumentStorage, extractor: DocumentExtractor) -> None:
         self._storage = storage
         self._extractor = extractor
 
-    async def __call__(self, event: DocumentUploaded, uow: UnitOfWork) -> None:
-        document_id = event.document_id
+    async def __call__(self, command: commands.ExtractDocument, uow: UnitOfWork) -> None:
+        document_id = command.document_id
         async with uow:
             document = await uow.documents.find_by_id(document_id)
             if document is None:

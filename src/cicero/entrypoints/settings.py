@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     s3_secret_access_key: str
     s3_bucket: str = "documents"
     s3_region: str = "us-east-1"
+    job_queue_concurrency: int = 1
 
 
 @lru_cache

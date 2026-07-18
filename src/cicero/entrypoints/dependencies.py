@@ -1,31 +1,35 @@
-"""The composition root: settings → adapters → use cases (ADR-005, ADR-010).
+"""The composition root: settings → adapters → use cases (ADR-005, ADR-010, ADR-013).
 
 Holds the one process-wide engine, builds the real `UnitOfWork` factory and the
 `S3DocumentStorage` from settings, and provisions the schema + bucket at startup.
-The infra providers (`get_uow_factory`, `get_document_storage`) are the swap point
-API tests override with in-memory fakes, so the fast suite needs no infrastructure.
+The message bus is assembled once in the lifespan (`app.state.bus`, see `main.py`);
+tests swap it wholesale at the `get_message_bus` seam with a bus wired over fakes,
+so the fast suite needs no infrastructure.
 """
 
 from __future__ import annotations
 
-from fastapi import Depends
+from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from cicero.adapters.extraction.pymupdf import PyMuPDFExtractor
 from cicero.adapters.persistence.engine import (
     create_schema,
     make_engine,
     make_session_factory,
 )
-from cicero.adapters.extraction.pymupdf import PyMuPDFExtractor
 from cicero.adapters.persistence.unit_of_work import make_sqlalchemy_uow_factory
 from cicero.adapters.storage.s3 import S3DocumentStorage
 from cicero.domain.document import commands
+from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.events import DocumentUploaded
 from cicero.domain.document.ports.document_extractor import DocumentExtractor
 from cicero.domain.document.ports.document_storage import DocumentStorage
 from cicero.domain.ports.unit_of_work import UnitOfWorkFactory
+from cicero.entrypoints.job_queue import JobConsumer, JobQueue
 from cicero.entrypoints.settings import Settings, get_settings
 from cicero.services.document.delete_document import DeleteDocument
+from cicero.services.document.enqueue_extraction import EnqueueExtraction
 from cicero.services.document.extract_document import ExtractDocument
 from cicero.services.document.list_documents import ListDocuments
 from cicero.services.document.upload_document import UploadDocument
@@ -74,12 +78,6 @@ def get_uow_factory() -> UnitOfWorkFactory:
     return make_sqlalchemy_uow_factory(_get_session_factory())
 
 
-def get_document_storage(
-    settings: Settings = Depends(get_settings),
-) -> DocumentStorage:
-    return _make_storage(settings)
-
-
 def get_document_extractor() -> DocumentExtractor:
     return PyMuPDFExtractor()
 
@@ -88,11 +86,14 @@ def bootstrap(
     uow_factory: UnitOfWorkFactory,
     storage: DocumentStorage,
     extractor: DocumentExtractor,
+    queue: JobQueue,
 ) -> MessageBus:
-    """Wire deps into the handlers and build the command/event maps (ADR-011, ADR-012).
+    """Wire deps into the handlers and build the command/event maps (ADR-011/012/013).
 
-    Commands come from the routes (the edge); extraction is an internal reaction —
-    the ``DocumentUploaded`` event handler — so upload *causes* it with no coupling.
+    Commands come from the edge: the routes issue upload/list/delete; the job-queue
+    worker issues ``ExtractDocument``. Extraction stays an internal *reaction* —
+    ``EnqueueExtraction`` handles ``DocumentUploaded`` by putting the document on the
+    ``queue`` (an intent, not a command), so upload *causes* extraction with no coupling.
     """
     return MessageBus(
         uow_factory,
@@ -100,14 +101,34 @@ def bootstrap(
             commands.UploadDocument: UploadDocument(storage),
             commands.ListDocuments: ListDocuments(),
             commands.DeleteDocument: DeleteDocument(storage),
+            commands.ExtractDocument: ExtractDocument(storage, extractor),
         },
-        event_handlers={DocumentUploaded: [ExtractDocument(storage, extractor)]},
+        event_handlers={DocumentUploaded: [EnqueueExtraction(queue.enqueue)]},
     )
 
 
-def get_message_bus(
-    uow_factory: UnitOfWorkFactory = Depends(get_uow_factory),
-    storage: DocumentStorage = Depends(get_document_storage),
-    extractor: DocumentExtractor = Depends(get_document_extractor),
-) -> MessageBus:
-    return bootstrap(uow_factory, storage, extractor)
+def build_message_bus(queue: JobQueue) -> MessageBus:
+    """Assemble the bus from the real adapters — called once in the lifespan."""
+    settings = get_settings()
+    return bootstrap(
+        get_uow_factory(),
+        _make_storage(settings),
+        get_document_extractor(),
+        queue,
+    )
+
+
+def make_extraction_consumer(bus: MessageBus) -> JobConsumer:
+    """The queue worker's job: turn an enqueued intent into an ``ExtractDocument``
+    command and dispatch it — commands are born here, at the edge (ADR-013)."""
+
+    async def consume(document_id: DocumentId) -> None:
+        await bus.handle(commands.ExtractDocument(document_id=document_id))
+
+    return consume
+
+
+def get_message_bus(request: Request) -> MessageBus:
+    """Return the process-wide bus built in the lifespan (ADR-013). Tests override
+    this with a fake-wired bus (``bootstrap`` over fakes)."""
+    return request.app.state.bus
