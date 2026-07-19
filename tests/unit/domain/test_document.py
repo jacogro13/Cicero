@@ -47,20 +47,22 @@ class TestDocumentStatusLifecycle:
         assert doc.source_key == f"documents/{doc.id.value}/source"
         assert doc.content_key == f"documents/{doc.id.value}/content"
 
-    def test_mark_processing_transitions_to_processing(self):
+    def test_mark_extracting_transitions_to_extracting(self):
         doc = Document.create("Any Title")
-        doc.mark_processing()
-        assert doc.status is DocumentStatus.PROCESSING
+        doc.mark_extracting()
+        assert doc.status is DocumentStatus.EXTRACTING
 
-    def test_mark_ready_transitions_to_ready(self):
+    def test_mark_extracted_transitions_to_extracted(self):
+        # Names the stage the document *finished*, not "readable": status encodes
+        # pipeline position, so a later stage can follow it (ADR-014).
         doc = Document.create("Any Title")
-        doc.mark_processing()
-        doc.mark_ready()
-        assert doc.status is DocumentStatus.READY
+        doc.mark_extracting()
+        doc.mark_extracted()
+        assert doc.status is DocumentStatus.EXTRACTED
 
     def test_mark_failed_transitions_to_failed(self):
         doc = Document.create("Any Title")
-        doc.mark_processing()
+        doc.mark_extracting()
         doc.mark_failed()
         assert doc.status is DocumentStatus.FAILED
 
@@ -78,17 +80,17 @@ class TestDocumentEvents:
         assert collected == [DocumentUploaded(document_id=doc.id)]
         assert doc.events == []
 
-    def test_mark_ready_records_an_extraction_completed_event(self):
+    def test_mark_extracted_records_an_extraction_completed_event(self):
         doc = Document.create("Any Title")
         doc.collect_events()  # drop the creation event
-        doc.mark_processing()
-        doc.mark_ready()
+        doc.mark_extracting()
+        doc.mark_extracted()
         assert doc.events == [ExtractionCompleted(document_id=doc.id)]
 
     def test_mark_failed_records_an_extraction_failed_event(self):
         doc = Document.create("Any Title")
         doc.collect_events()  # drop the creation event
-        doc.mark_processing()
+        doc.mark_extracting()
         doc.mark_failed()
         assert doc.events == [ExtractionFailed(document_id=doc.id)]
 

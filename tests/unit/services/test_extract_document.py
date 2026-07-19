@@ -1,6 +1,6 @@
 """Extract a document → Markdown — the ``ExtractDocument`` command handler (ADR-009/013).
 
-Drives PROCESSING→READY/FAILED with a stub extractor; storage-first, so a READY
+Drives EXTRACTING→EXTRACTED/FAILED with a stub extractor; storage-first, so an EXTRACTED
 document never points at a missing blob. An unknown id raises ``DocumentNotFound``.
 """
 
@@ -36,7 +36,7 @@ class _ExplodingExtractor(StubDocumentExtractor):
 
 
 class TestExtractDocument:
-    async def test_marks_the_document_ready(self):
+    async def test_marks_the_document_extracted(self):
         uow_factory = make_in_memory_uow_factory()
         storage = InMemoryDocumentStorage()
         document = await _upload(uow_factory, storage)
@@ -47,7 +47,7 @@ class TestExtractDocument:
 
         async with uow_factory() as uow:
             extracted = await uow.documents.find_by_id(document.id)
-        assert extracted.status is DocumentStatus.READY
+        assert extracted.status is DocumentStatus.EXTRACTED
 
     async def test_stores_the_extracted_markdown_at_the_content_key(self):
         uow_factory = make_in_memory_uow_factory()
@@ -62,9 +62,9 @@ class TestExtractDocument:
             extracted = await uow.documents.find_by_id(document.id)
         assert await storage.get(extracted.content_key) == b"# Clean Code\n\nBody."
 
-    async def test_commits_processing_before_extraction_runs(self):
+    async def test_commits_extracting_before_extraction_runs(self):
         # A spy extractor reads the persisted status mid-extraction: it must
-        # already be PROCESSING, i.e. committed before the heavy work begins.
+        # already be EXTRACTING, i.e. committed before the heavy work begins.
         uow_factory = make_in_memory_uow_factory()
         storage = InMemoryDocumentStorage()
         document = await _upload(uow_factory, storage)
@@ -79,7 +79,7 @@ class TestExtractDocument:
 
         await _extract(uow_factory, storage, _StatusSpyExtractor(), document.id)
 
-        assert seen == [DocumentStatus.PROCESSING]
+        assert seen == [DocumentStatus.EXTRACTING]
 
     async def test_extraction_failure_marks_failed_and_stores_no_content(self):
         uow_factory = make_in_memory_uow_factory()

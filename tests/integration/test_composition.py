@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 
 from cicero.domain.document.document_status import DocumentStatus
 from cicero.entrypoints.main import create_app
+from cicero.entrypoints.pipeline import has_next_stage
 from cicero.entrypoints.settings import get_settings
 
 _PDF = ("clean-code.pdf", b"%PDF-1.4 bytes", "application/pdf")
@@ -85,7 +86,9 @@ def _poll_status(client: TestClient, document_id: str, *, timeout: float = 10.0)
     """Poll the live app until the document leaves a non-terminal state. The queue
     worker runs on the TestClient's portal loop, so it drains while we sleep."""
     deadline = time.monotonic() + timeout
-    terminal = {DocumentStatus.READY.value, DocumentStatus.FAILED.value}
+    # "Terminal" is read off the stage table, not restated here, so this poll keeps
+    # working when a later stage lands (ADR-014).
+    terminal = {s.value for s in DocumentStatus if not has_next_stage(s)}
     while time.monotonic() < deadline:
         listed = client.get("/api/documents").json()
         status = next(d["status"] for d in listed if d["id"] == document_id)
@@ -106,5 +109,5 @@ def test_upload_is_extracted_off_the_request_path(live_stack: dict):
         # Upload returns immediately; extraction has not run on the request path.
         assert created["status"] == DocumentStatus.UPLOADED.value
 
-        # The queue worker extracts through real PyMuPDF and MinIO, reaching READY.
-        assert _poll_status(client, created["id"]) == DocumentStatus.READY.value
+        # The queue worker extracts through real PyMuPDF and MinIO, reaching EXTRACTED.
+        assert _poll_status(client, created["id"]) == DocumentStatus.EXTRACTED.value
