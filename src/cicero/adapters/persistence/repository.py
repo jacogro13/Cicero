@@ -17,23 +17,17 @@ class PostgresDocumentRepository(DocumentRepository):
     """
 
     def __init__(self, session: AsyncSession) -> None:
+        super().__init__()
         self._session = session
-        self.seen: dict[DocumentId, Document] = {}
 
-    async def save(self, document: Document) -> None:
+    async def _save(self, document: Document) -> None:
         self._session.add(document)
-        self.seen[document.id] = document
 
-    async def find_by_id(self, document_id: DocumentId) -> Document | None:
-        document = await self._session.get(Document, document_id)
-        if document is not None:
-            self.seen[document.id] = document
-        return document
+    async def _find_by_id(self, document_id: DocumentId) -> Document | None:
+        return await self._session.get(Document, document_id)
 
-    async def find_all(self) -> list[Document]:
-        documents = list(await self._session.scalars(select(Document)))
-        self.seen.update({document.id: document for document in documents})
-        return documents
+    async def _find_all(self) -> list[Document]:
+        return list(await self._session.scalars(select(Document)))
 
-    async def delete(self, document: Document) -> None:
+    async def _delete(self, document: Document) -> None:
         await self._session.delete(document)

@@ -21,33 +21,28 @@ class InMemoryDocumentRepository(DocumentRepository):
     the owning UoW flushes the buffer on commit and discards it on rollback."""
 
     def __init__(self, store: dict[DocumentId, Document]) -> None:
+        super().__init__()
         self._store = store
         self._pending: dict[DocumentId, Document] = {}
         self._pending_deletes: set[DocumentId] = set()
-        self.seen: dict[DocumentId, Document] = {}
 
-    async def save(self, document: Document) -> None:
+    async def _save(self, document: Document) -> None:
         self._pending_deletes.discard(document.id)
         self._pending[document.id] = document
-        self.seen[document.id] = document
 
-    async def delete(self, document: Document) -> None:
+    async def _delete(self, document: Document) -> None:
         self._pending.pop(document.id, None)
         self._pending_deletes.add(document.id)
 
-    async def find_by_id(self, document_id: DocumentId) -> Document | None:
+    async def _find_by_id(self, document_id: DocumentId) -> Document | None:
         if document_id in self._pending_deletes:
             return None
-        document = self._pending.get(document_id) or self._store.get(document_id)
-        if document is not None:
-            self.seen[document.id] = document
-        return document
+        return self._pending.get(document_id) or self._store.get(document_id)
 
-    async def find_all(self) -> list[Document]:
+    async def _find_all(self) -> list[Document]:
         visible = {**self._store, **self._pending}
         for document_id in self._pending_deletes:
             visible.pop(document_id, None)
-        self.seen.update(visible)
         return list(visible.values())
 
     def flush(self) -> None:
