@@ -5,21 +5,23 @@ from cicero.domain.messages import Event
 
 
 @dataclass(frozen=True)
-class DocumentUploaded(Event):
+class DocumentEvent(Event):
+    """A fact about one document. The shared ``document_id`` is what lets a single
+    handler advance the pipeline off any stage's event (ADR-014)."""
+
+    document_id: DocumentId
+
+
+@dataclass(frozen=True)
+class DocumentUploaded(DocumentEvent):
     """A document's source file has been stored and its metadata persisted (ADR-011)."""
 
-    document_id: DocumentId
+
+@dataclass(frozen=True)
+class ExtractionCompleted(DocumentEvent):
+    """A document's source was extracted to Markdown and it is now EXTRACTED (ADR-012)."""
 
 
 @dataclass(frozen=True)
-class ExtractionCompleted(Event):
-    """A document's source was extracted to Markdown and it is now READY (ADR-012)."""
-
-    document_id: DocumentId
-
-
-@dataclass(frozen=True)
-class ExtractionFailed(Event):
+class ExtractionFailed(DocumentEvent):
     """Extracting a document's source failed and it is now FAILED (ADR-012)."""
-
-    document_id: DocumentId

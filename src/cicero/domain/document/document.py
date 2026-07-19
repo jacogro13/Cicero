@@ -19,7 +19,8 @@ class Document:
 
     Construct via :meth:`create` so the id is generated and the title is
     validated; do not instantiate directly. Status changes go through the
-    ``mark_*`` methods rather than assigning :attr:`status` directly (ADR-002).
+    ``mark_*`` methods rather than assigning :attr:`status` directly (ADR-002);
+    each names the pipeline stage it completes (ADR-014).
     The aggregate records domain events off its lifecycle (ADR-011); the
     Unit of Work drains them after a commit.
     """
@@ -64,11 +65,11 @@ class Document:
         """Object-storage layout, a pure function of identity: ``documents/{id}/{name}``."""
         return f"documents/{self.id.value}/{name}"
 
-    def mark_processing(self) -> None:
-        self.status = DocumentStatus.PROCESSING
+    def mark_extracting(self) -> None:
+        self.status = DocumentStatus.EXTRACTING
 
-    def mark_ready(self) -> None:
-        self.status = DocumentStatus.READY
+    def mark_extracted(self) -> None:
+        self.status = DocumentStatus.EXTRACTED
         self.events.append(ExtractionCompleted(document_id=self.id))
 
     def mark_failed(self) -> None:

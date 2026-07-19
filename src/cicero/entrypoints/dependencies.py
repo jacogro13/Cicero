@@ -26,10 +26,10 @@ from cicero.domain.document.events import DocumentUploaded
 from cicero.domain.document.ports.document_extractor import DocumentExtractor
 from cicero.domain.document.ports.document_storage import DocumentStorage
 from cicero.domain.ports.unit_of_work import UnitOfWorkFactory
-from cicero.entrypoints.job_queue import JobConsumer, JobQueue
+from cicero.entrypoints.job_queue import JobQueue
 from cicero.entrypoints.settings import Settings, get_settings
+from cicero.services.document.advance_document import AdvanceDocument
 from cicero.services.document.delete_document import DeleteDocument
-from cicero.services.document.enqueue_extraction import EnqueueExtraction
 from cicero.services.document.extract_document import ExtractDocument
 from cicero.services.document.list_documents import ListDocuments
 from cicero.services.document.upload_document import UploadDocument
@@ -88,12 +88,14 @@ def bootstrap(
     extractor: DocumentExtractor,
     queue: JobQueue,
 ) -> MessageBus:
-    """Wire deps into the handlers and build the command/event maps (ADR-011/012/013).
+    """Wire deps into the handlers and build the command/event maps (ADR-011/012/013/014).
 
     Commands come from the edge: the routes issue upload/list/delete; the job-queue
-    worker issues ``ExtractDocument``. Extraction stays an internal *reaction* —
-    ``EnqueueExtraction`` handles ``DocumentUploaded`` by putting the document on the
-    ``queue`` (an intent, not a command), so upload *causes* extraction with no coupling.
+    worker derives its command from the document's status (`pipeline.py`). Processing
+    stays an internal *reaction* — ``AdvanceDocument`` handles ``DocumentUploaded`` by
+    putting the document on the ``queue`` (an intent, not a command), so upload *causes*
+    extraction with no coupling. A further stage subscribes the same handler to its
+    event and adds a ``NEXT_COMMAND`` entry; nothing here grows a branch.
     """
     return MessageBus(
         uow_factory,
@@ -103,7 +105,7 @@ def bootstrap(
             commands.DeleteDocument: DeleteDocument(storage),
             commands.ExtractDocument: ExtractDocument(storage, extractor),
         },
-        event_handlers={DocumentUploaded: [EnqueueExtraction(queue.enqueue)]},
+        event_handlers={DocumentUploaded: [AdvanceDocument(queue.enqueue)]},
     )
 
 
@@ -116,16 +118,6 @@ def build_message_bus(queue: JobQueue) -> MessageBus:
         get_document_extractor(),
         queue,
     )
-
-
-def make_extraction_consumer(bus: MessageBus) -> JobConsumer:
-    """The queue worker's job: turn an enqueued intent into an ``ExtractDocument``
-    command and dispatch it — commands are born here, at the edge (ADR-013)."""
-
-    async def consume(document_id: DocumentId) -> None:
-        await bus.handle(commands.ExtractDocument(document_id=document_id))
-
-    return consume
 
 
 def get_message_bus(request: Request) -> MessageBus:

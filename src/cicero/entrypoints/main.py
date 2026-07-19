@@ -6,12 +6,12 @@ from cicero.entrypoints.dependencies import (
     build_message_bus,
     dispose_engine,
     get_uow_factory,
-    make_extraction_consumer,
     provision_infrastructure,
 )
 from cicero.entrypoints.errors import register_exception_handlers
 from cicero.entrypoints.job_queue import JobQueue
-from cicero.entrypoints.job_recovery import reconcile_processing_documents
+from cicero.entrypoints.job_recovery import reconcile_unfinished_documents
+from cicero.entrypoints.pipeline import make_pipeline_consumer
 from cicero.entrypoints.routers.documents import router as documents_router
 from cicero.entrypoints.settings import get_settings
 
@@ -19,15 +19,17 @@ from cicero.entrypoints.settings import get_settings
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Provision the schema + bucket the adapters assume (ADR-010), then build the
-    # process-wide bus and job queue (ADR-013): the worker drains extraction off the
-    # request path, and any document left PROCESSING by a restart is re-enqueued.
+    # process-wide bus and job queue (ADR-013): the worker drains processing off the
+    # request path, deriving each command from the document's status (ADR-014), and
+    # any document a restart left unfinished is re-enqueued through that same path.
     # Not entered by the fast suite's plain TestClient.
     await provision_infrastructure()
+    uow_factory = get_uow_factory()
     queue = JobQueue(concurrency=get_settings().job_queue_concurrency)
     bus = build_message_bus(queue)
     app.state.bus = bus
-    await queue.start(make_extraction_consumer(bus))
-    await reconcile_processing_documents(queue, get_uow_factory())
+    await queue.start(make_pipeline_consumer(bus, uow_factory))
+    await reconcile_unfinished_documents(queue, uow_factory)
     yield
     await queue.stop()
     await dispose_engine()

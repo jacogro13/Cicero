@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class ExtractDocument:
     """Handler for the ``ExtractDocument`` command: extract the source to Markdown,
-    driving PROCESSING→READY/FAILED (ADR-009). The job-queue worker issues the command
+    driving EXTRACTING→EXTRACTED/FAILED (ADR-009). The job-queue worker issues the command
     off the request path (ADR-013); storage-first (ADR-004). Raises ``DocumentNotFound``
     for an unknown id.
     """
@@ -29,7 +29,7 @@ class ExtractDocument:
             document = await uow.documents.find_by_id(document_id)
             if document is None:
                 raise DocumentNotFound(document_id)
-            document.mark_processing()
+            document.mark_extracting()
             await uow.documents.save(document)
             await uow.commit()
 
@@ -42,7 +42,7 @@ class ExtractDocument:
             await self._mark(document_id, uow, lambda doc: doc.mark_failed())
             return
 
-        await self._mark(document_id, uow, lambda doc: doc.mark_ready())
+        await self._mark(document_id, uow, lambda doc: doc.mark_extracted())
 
     async def _mark(
         self,
