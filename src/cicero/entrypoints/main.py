@@ -26,7 +26,6 @@ async def lifespan(app: FastAPI):
     queue = JobQueue(concurrency=get_settings().job_queue_concurrency)
     bus = build_message_bus(queue)
     app.state.bus = bus
-    app.state.job_queue = queue
     await queue.start(make_extraction_consumer(bus))
     await reconcile_processing_documents(queue, get_uow_factory())
     yield
