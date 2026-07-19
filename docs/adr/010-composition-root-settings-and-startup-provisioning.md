@@ -56,7 +56,9 @@ service health. `docker compose up` runs the app end to end.
   provisions both schema and bucket.
 - `make dev` now needs the infra (a `docker compose up` away); the fast `make test`
   suite is untouched (it never enters the lifespan).
-- The api image carries the `pymupdf4llm`/onnxruntime stack — heavier than ideal;
-  trimming it (slimmer extractor image, or a separate worker image) is a later concern.
+- The api image carries ~165 MB of extraction stack — pymupdf (81) + onnxruntime (52)
+  + numpy (32), pulled in via `pymupdf4llm → pymupdf-layout → onnxruntime`. The fix is
+  a slim api image with extraction split into a separate worker image; it waits until
+  a worker process exists to split out.
 - Schema-at-startup is fine while one app owns the schema; the day it evolves under
   real data, an Alembic baseline replaces `create_all` — a deliberate, recorded debt.
