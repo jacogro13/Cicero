@@ -44,29 +44,32 @@ imports the other); the rule is enforced in CI by import-linter.
 
 | Layer | Responsibility | Status |
 |-------|----------------|--------|
-| `domain/` | Entities, value objects, ports, messages, errors — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; messages `Command`/`Event` + `Upload`/`Extract`/`List`/`Delete` commands, `DocumentUploaded`/`ExtractionCompleted`/`ExtractionFailed` events; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`, `DocumentExtractor`; `DomainError` hierarchy) |
-| `services/` | Command/event handlers + the message bus that routes them | **Exists** (`MessageBus`; command handlers `UploadDocument`, `ListDocuments`, `DeleteDocument`, `ExtractDocument`; the `EnqueueExtraction` event handler on `DocumentUploaded`) |
+| `domain/` | Entities, value objects, ports, messages, errors — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; messages `Command`/`Event` + `Upload`/`Extract`/`List`/`Delete` commands, `DocumentEvent` base + `DocumentUploaded`/`ExtractionCompleted`/`ExtractionFailed` events; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`, `DocumentExtractor`; `DomainError` hierarchy) |
+| `services/` | Command/event handlers + the message bus that routes them | **Exists** (`MessageBus`; command handlers `UploadDocument`, `ListDocuments`, `DeleteDocument`, `ExtractDocument`; the `AdvanceDocument` event handler on `DocumentUploaded`) |
 | `adapters/` | Implements domain ports against real infra (DB, object storage, extraction, LLM) | **Exists** (`PostgresDocumentRepository`, `SqlAlchemyUnitOfWork`, `S3DocumentStorage`, `PyMuPDFExtractor`; LLM to come) |
-| `entrypoints/` | FastAPI app, routes, schemas, error mapping, the serial job queue, the composition root (settings, engine lifespan, startup provisioning, bus bootstrap) | **Exists** (`GET /health`; `POST`/`GET`/`DELETE /api/documents`; `JobQueue` + restart recovery; live wiring over Postgres + S3) |
+| `entrypoints/` | FastAPI app, routes, schemas, error mapping, the serial job queue, the composition root (settings, engine lifespan, startup provisioning, bus bootstrap) | **Exists** (`GET /health`; `POST`/`GET`/`DELETE /api/documents`; `JobQueue` + the `NEXT_COMMAND` stage table + restart recovery; live wiring over Postgres + S3) |
 
 ## Document lifecycle
 
 `Document` is the aggregate root. Its status is a guarded state machine —
-`UPLOADED → PROCESSING → READY | FAILED` — with transitions encapsulated as
-entity methods, not a free `status` setter. `status` is the single source of truth
-for readiness: the internal extracted text (an opaque locator, never shown to the
-reader) exists when, and only when, the status is READY. `content_key` is not
+`UPLOADED → EXTRACTING → EXTRACTED | FAILED` — with transitions encapsulated as
+entity methods, not a free `status` setter. Each member names the **pipeline stage
+reached**, not readiness (ADR-014): that is what lets the edge derive the next
+command from a stored status, and what lets a later stage append to the chain
+instead of redefining a terminal name. The internal extracted text (an opaque
+locator, never shown to the reader) exists from EXTRACTED onwards. `content_key` is not
 lifecycle state — it is the identity-derived address of that text (`source_key`'s
 twin), always computable, so nothing has to be set or kept in sync on transition.
-See **[ADR-002](adr/002-document-status-state-machine.md)**.
+See **[ADR-002](adr/002-document-status-state-machine.md)** and
+**[ADR-014](adr/014-status-driven-pipeline-advance.md)**.
 
 ```mermaid
 stateDiagram-v2
     [*] --> UPLOADED
-    UPLOADED --> PROCESSING: mark_processing()
-    PROCESSING --> READY: mark_ready()
-    PROCESSING --> FAILED: mark_failed()
-    READY --> [*]
+    UPLOADED --> EXTRACTING: mark_extracting()
+    EXTRACTING --> EXTRACTED: mark_extracted()
+    EXTRACTING --> FAILED: mark_failed()
+    EXTRACTED --> [*]
     FAILED --> [*]
 ```
 
@@ -174,9 +177,10 @@ maps) and hands the bus to the routes — **all four** (`UploadDocument`,
 
 The pipeline is wired as events. New messages reach the queue **only** as events the
 aggregates raise — a handler never synthesises a command, so **commands enter at the
-edge**. Internal reactions are event handlers: **`EnqueueExtraction`** subscribes to
+edge**. Internal reactions are event handlers: **`AdvanceDocument`** subscribes to
 `DocumentUploaded` and puts the document on the job queue, so upload *causes*
-extraction without the route knowing extraction exists. The command surface is now
+extraction without the route knowing extraction exists — and without the handler
+naming extraction either, since it enqueues a bare id. The command surface is now
 issued from two edges — the routes (`UploadDocument`, `ListDocuments`,
 `DeleteDocument`) and the **job-queue worker** (`ExtractDocument`, see "Background
 jobs"). See **[ADR-011](adr/011-message-bus-commands-and-events.md)**,
@@ -196,15 +200,15 @@ raises `DocumentNotFound`. `DELETE /api/documents/{id}` returns 204.
 **`ExtractDocument`** is a **command handler**, issued by the job-queue worker off
 the request path (see "Background jobs"), not by a route. It turns an uploaded source into the
 internal Markdown that summarization will read (never shown to the reader), driving
-the rest of the status machine for real: it commits `PROCESSING` first (so the
+the rest of the status machine for real: it commits `EXTRACTING` first (so the
 in-flight state is observable), runs the heavy I/O outside any transaction — read
 the source bytes (`DocumentStorage.get`), extract Markdown (the
 **`DocumentExtractor`** port), write the result blob to `document.content_key` —
-then commits `READY`, raising `ExtractionCompleted` (the fact summaries will
+then commits `EXTRACTED`, raising `ExtractionCompleted` (the fact summaries will
 subscribe to). The service never mints a storage key: `content_key` is the
 document's own identity-derived address (`documents/{id}/content`). Storage-first
-mirrors upload (ADR-004): the blob is written before `READY` is committed, so a
-READY document never points at a missing content file. Extraction failure commits
+mirrors upload (ADR-004): the blob is written before `EXTRACTED` is committed, so an
+EXTRACTED document never points at a missing content file. Extraction failure commits
 `FAILED` and raises `ExtractionFailed` (status is the outcome channel); an unknown
 id raises `DocumentNotFound`. The real extractor is **`PyMuPDFExtractor`**
 (`pymupdf4llm`, in-process, offloaded to the anyio thread); a stub backs the unit
@@ -217,12 +221,12 @@ sequenceDiagram
     participant W as UnitOfWork
     participant S as DocumentStorage
     participant E as DocumentExtractor
-    U->>W: commit mark_processing()
+    U->>W: commit mark_extracting()
     U->>S: source = await get(source_key)
     U->>E: markdown = await extract_markdown(source)
     alt extraction succeeds
         U->>S: await put(document.content_key, markdown)
-        U->>W: commit mark_ready()
+        U->>W: commit mark_extracted()
     else extraction fails
         U->>W: commit mark_failed()
     end
@@ -237,16 +241,28 @@ runs **off the request path** on a process-wide serial **`JobQueue`**
 freely without ever running more than N heavy jobs at once — the memory guard.
 
 The wiring keeps commands at the edge. The `DocumentUploaded` handler
-(**`EnqueueExtraction`**) only enqueues an intent; the **worker** turns each intent
-into an `ExtractDocument` command and dispatches it through the bus — so the command
-is born at an entrypoint, never synthesised in a handler. Upload returns immediately
-as `UPLOADED`; the document reaches `READY`/`FAILED` asynchronously (clients poll
-`GET`). The queue lives on `app.state`, created per event loop in the lifespan.
+(**`AdvanceDocument`**) only enqueues an intent and names no stage; the **worker**
+reads the document's persisted status back and issues the command that status calls
+for — so the command is born at an entrypoint, never synthesised in a handler. Upload
+returns immediately as `UPLOADED`; the document reaches `EXTRACTED`/`FAILED`
+asynchronously (clients poll `GET`). The queue lives on `app.state`, created per event
+loop in the lifespan.
+
+**The pipeline's order lives in one table**, `NEXT_COMMAND` in
+`entrypoints/pipeline.py`, mapping each status to the command that advances it (or to
+`None` — the document is done and the intent is dropped). It is total over
+`DocumentStatus`, so a new status without a decision fails a test rather than stalling
+a document silently. Adding a stage therefore costs one status, one entry here, and one
+subscription of `AdvanceDocument` to the preceding event — no new handler class and no
+branch in the composition root.
 
 An in-process queue loses whatever was mid-flight on a restart, so startup runs
-**`reconcile_processing_documents`**: it re-enqueues every document left in
-`PROCESSING`, reconstructing the outstanding work from persisted status with no jobs
-table. See **[ADR-013](adr/013-serial-job-queue-and-restart-recovery.md)**.
+**`reconcile_unfinished_documents`**: it re-enqueues every document whose status still
+has a next stage, reconstructing the outstanding work from persisted status with no jobs
+table. Because that is the *same* question ordinary dispatch asks, recovery is not a
+separate path — and it also catches a document whose enqueue never happened. See
+**[ADR-013](adr/013-serial-job-queue-and-restart-recovery.md)** and
+**[ADR-014](adr/014-status-driven-pipeline-advance.md)**.
 
 ```mermaid
 sequenceDiagram
@@ -255,12 +271,13 @@ sequenceDiagram
     participant Q as JobQueue
     participant K as Worker
     R->>B: handle(UploadDocument)
-    B->>B: DocumentUploaded → EnqueueExtraction
+    B->>B: DocumentUploaded → AdvanceDocument
     B->>Q: enqueue(document_id)
     R-->>R: 201 UPLOADED (returns now)
     Q->>K: document_id
+    K->>K: read status → NEXT_COMMAND
     K->>B: handle(ExtractDocument)
-    B->>B: PROCESSING → … → READY/FAILED
+    B->>B: EXTRACTING → … → EXTRACTED/FAILED
 ```
 
 ## Errors: the domain raises, the entrypoints map
@@ -335,7 +352,7 @@ sequenceDiagram
     D->>E: create_schema (create_all, idempotent)
     D->>S: ensure_bucket (idempotent)
     L->>D: build_message_bus → app.state.bus
-    L->>Q: start(worker) + reconcile PROCESSING
+    L->>Q: start(worker) + reconcile unfinished
     Note over L: yield — app serves requests, queue drains jobs
     L->>Q: stop() on shutdown
     L->>D: dispose_engine() on shutdown
@@ -388,8 +405,8 @@ the code on purpose. Implemented so far:
   Unit of Work's new events after each handler. The `Document` aggregate raises the
   events (`DocumentUploaded` on `create()`, `ExtractionCompleted`/`ExtractionFailed`
   on the outcome). Commands enter only at the edge; internal reactions are events, so
-  **upload causes extraction** by `EnqueueExtraction` subscribing to `DocumentUploaded`
-  — no route-level coupling.
+  **upload causes extraction** by `AdvanceDocument` subscribing to `DocumentUploaded`
+  — no route-level coupling, and no stage named in a handler.
 - The use cases (the `services/` layer): **`UploadDocument`**, over the
   `DocumentStorage` port — stores the source file then persists the document,
   file-first so a failure can only orphan a blob; **`ListDocuments`**, a read
@@ -397,14 +414,15 @@ the code on purpose. Implemented so far:
   **`DeleteDocument`**, which removes metadata then the source blob (the mirror of
   upload's ordering) and raises `DocumentNotFound` for an unknown id — all command
   handlers reached through the bus. **`ExtractDocument`**, a command handler issued
-  by the job-queue worker, drives `PROCESSING → READY/FAILED`, storing the extracted
+  by the job-queue worker, drives `EXTRACTING → EXTRACTED/FAILED`, storing the extracted
   Markdown at `content_key` (file-first, like upload).
 - The **serial job queue** (`entrypoints/`): a `JobQueue` drains `DocumentId` intents
   with bounded concurrency, so extraction (and the summaries/podcast ahead) runs off
-  the request path — `EnqueueExtraction` enqueues, the worker issues `ExtractDocument`
-  at the edge. Startup `reconcile_processing_documents` re-enqueues documents left in
-  `PROCESSING` by a restart, with no jobs table. Proven by an integration test that
-  uploads a real PDF and polls the live app to `READY`.
+  the request path — `AdvanceDocument` enqueues, and the worker derives the command
+  from the document's persisted status via the `NEXT_COMMAND` table, so no handler
+  names a stage. Startup `reconcile_unfinished_documents` asks that same table which
+  documents a restart left unfinished, with no jobs table. Proven by an integration
+  test that uploads a real PDF and polls the live app to `EXTRACTED`.
 - The **composition root** (`entrypoints/`): environment-driven `Settings`, a
   per-process engine wired to the real adapters (the infra seams retired), and a
   `lifespan` that provisions the schema + bucket, builds the process-wide bus, and
