@@ -2,6 +2,10 @@
 
 **Status:** Accepted
 
+> Partly superseded by [ADR-014](014-status-driven-pipeline-advance.md): the enum
+> members now name pipeline stages (`EXTRACTING`/`EXTRACTED`), not readiness. The
+> encapsulation decision below — transitions only via `mark_*` methods — still holds.
+
 > Builds on [ADR-001](001-hexagonal-ddd-layering.md): the state machine lives
 > entirely in the `Document` aggregate root, with no infrastructure deps.
 
