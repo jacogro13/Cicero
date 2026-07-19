@@ -29,8 +29,9 @@ so ORM-loaded instances (built without `__init__`) work, and is **excluded from
 equality**, so persisted-vs-loaded comparison is unaffected.
 
 **The Unit of Work collects events.** `collect_new_events()` drains events off the
-aggregates the repository has **seen** (each repo tracks a `seen` set, registered on
-`save`/`find`). Collection rides the transaction boundary — the same UoW that commits
+aggregates the repository has **seen** — registered by the repository port itself
+(template method over `_`-prefixed persistence hooks), so no implementation can skip
+the bookkeeping. Collection rides the transaction boundary — the same UoW that commits
 the state change surfaces the facts it caused.
 
 **The `MessageBus` (`services/`) has one entry point, `handle()`.** It opens a UoW

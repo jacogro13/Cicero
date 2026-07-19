@@ -164,7 +164,8 @@ bases in `domain/messages.py`). The **aggregate is the event source**: `Document
 records events off its own lifecycle (`create()` → `DocumentUploaded`; further
 status methods raise `ExtractionCompleted`/`ExtractionFailed`). After each handler
 the bus **drains the Unit of Work's new events** — `collect_new_events()` reads them
-off the aggregates the repository has `seen` (saved or fetched) — and keeps
+off the aggregates the repository has `seen` (registered by the port itself on
+every accessor, delete included) — and keeps
 processing until the queue empties, so one upload can fan out into a chain of
 reactions. Handlers stay class-based use cases, callable as `(message, uow)`; the
 composition root **bootstraps** them (injecting deps, building the command/event
