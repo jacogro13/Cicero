@@ -11,7 +11,11 @@ import uuid
 from fastapi.testclient import TestClient
 
 from cicero.domain.document.document_status import DocumentStatus
-from cicero.entrypoints.dependencies import bootstrap, get_message_bus
+from cicero.entrypoints.dependencies import (
+    bootstrap,
+    get_message_bus,
+    get_uow_factory,
+)
 from cicero.entrypoints.job_queue import JobQueue
 from cicero.entrypoints.main import create_app
 
@@ -26,13 +30,17 @@ _PDF = ("clean-code.pdf", b"%PDF-1.4 bytes", "application/pdf")
 
 def _client() -> TestClient:
     app = create_app()
+    uow_factory = make_in_memory_uow_factory()
     bus = bootstrap(
-        make_in_memory_uow_factory(),
+        uow_factory,
         InMemoryDocumentStorage(),
         StubDocumentExtractor("# Clean Code"),
         JobQueue(),
     )
+    # Writes ride the bus; reads bypass it (ADR-015). Both share one store so a
+    # posted document is visible to the read side.
     app.dependency_overrides[get_message_bus] = lambda: bus
+    app.dependency_overrides[get_uow_factory] = lambda: uow_factory
     return TestClient(app)
 
 

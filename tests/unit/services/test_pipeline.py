@@ -13,9 +13,9 @@ from cicero.domain.document.events import DocumentUploaded
 from cicero.entrypoints.job_queue import JobQueue
 from cicero.entrypoints.pipeline import make_pipeline_consumer
 from cicero.services.document.advance_document import AdvanceDocument
+from cicero.services import views
 from cicero.services.document.delete_document import DeleteDocument
 from cicero.services.document.extract_document import ExtractDocument
-from cicero.services.document.list_documents import ListDocuments
 from cicero.services.document.upload_document import UploadDocument
 from cicero.services.messagebus import MessageBus
 
@@ -33,7 +33,6 @@ def _wire(uow_factory, storage, extractor) -> tuple[MessageBus, JobQueue]:
         uow_factory,
         command_handlers={
             commands.UploadDocument: UploadDocument(storage),
-            commands.ListDocuments: ListDocuments(),
             commands.DeleteDocument: DeleteDocument(storage),
             commands.ExtractDocument: ExtractDocument(storage, extractor),
         },
@@ -61,5 +60,5 @@ class TestUploadCausesExtraction:
         await queue.join()
         await queue.stop()
 
-        listed = await bus.handle(commands.ListDocuments())
+        listed = await views.list_documents(uow_factory)
         assert [d.status for d in listed] == [DocumentStatus.EXTRACTED]
