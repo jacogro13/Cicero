@@ -31,7 +31,6 @@ from cicero.entrypoints.settings import Settings, get_settings
 from cicero.services.document.advance_document import AdvanceDocument
 from cicero.services.document.delete_document import DeleteDocument
 from cicero.services.document.extract_document import ExtractDocument
-from cicero.services.document.list_documents import ListDocuments
 from cicero.services.document.upload_document import UploadDocument
 from cicero.services.messagebus import MessageBus
 
@@ -90,8 +89,9 @@ def bootstrap(
 ) -> MessageBus:
     """Wire deps into the handlers and build the command/event maps (ADR-011/012/013/014).
 
-    Commands come from the edge: the routes issue upload/list/delete; the job-queue
-    worker derives its command from the document's status (`pipeline.py`). Processing
+    Commands come from the edge: the routes issue upload/delete (reads bypass the bus,
+    ADR-015); the job-queue worker derives its command from the document's status
+    (`pipeline.py`). Processing
     stays an internal *reaction* — ``AdvanceDocument`` handles ``DocumentUploaded`` by
     putting the document on the ``queue`` (an intent, not a command), so upload *causes*
     extraction with no coupling. A further stage subscribes the same handler to its
@@ -101,7 +101,6 @@ def bootstrap(
         uow_factory,
         command_handlers={
             commands.UploadDocument: UploadDocument(storage),
-            commands.ListDocuments: ListDocuments(),
             commands.DeleteDocument: DeleteDocument(storage),
             commands.ExtractDocument: ExtractDocument(storage, extractor),
         },

@@ -20,11 +20,6 @@ class DeleteDocument(Command):
 
 
 @dataclass(frozen=True)
-class ListDocuments(Command):
-    """Return every stored document — a read that rides the bus (ADR-012)."""
-
-
-@dataclass(frozen=True)
 class ExtractDocument(Command):
     """Extract a document's source to Markdown — issued by the job-queue worker (ADR-013)."""
 

@@ -6,8 +6,10 @@ from fastapi import APIRouter, Depends, Form, UploadFile
 
 from cicero.domain.document import commands
 from cicero.domain.document.document_id import DocumentId
-from cicero.entrypoints.dependencies import get_message_bus
+from cicero.domain.ports.unit_of_work import UnitOfWorkFactory
+from cicero.entrypoints.dependencies import get_message_bus, get_uow_factory
 from cicero.entrypoints.schemas import DocumentResponse
+from cicero.services import views
 from cicero.services.messagebus import MessageBus
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -26,10 +28,10 @@ async def create_document(
 
 @router.get("", response_model=list[DocumentResponse])
 async def list_documents(
-    bus: MessageBus = Depends(get_message_bus),
+    uow_factory: UnitOfWorkFactory = Depends(get_uow_factory),
 ) -> list[DocumentResponse]:
-    documents = await bus.handle(commands.ListDocuments())
-    return [DocumentResponse.from_domain(document) for document in documents]
+    documents = await views.list_documents(uow_factory)
+    return [DocumentResponse.from_view(view) for view in documents]
 
 
 @router.delete("/{document_id}", status_code=204)

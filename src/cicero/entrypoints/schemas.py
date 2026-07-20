@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from cicero.domain.document.document import Document
 from cicero.domain.document.document_status import DocumentStatus
+from cicero.services.views import DocumentView
 
 
 class DocumentResponse(BaseModel):
@@ -18,4 +19,10 @@ class DocumentResponse(BaseModel):
 
     @classmethod
     def from_domain(cls, document: Document) -> DocumentResponse:
+        """From the write model — a create/upload echoes the affected aggregate."""
         return cls(id=document.id.value, title=document.title, status=document.status)
+
+    @classmethod
+    def from_view(cls, view: DocumentView) -> DocumentResponse:
+        """From the read side (ADR-015) — the list endpoint renders read DTOs."""
+        return cls(id=view.id.value, title=view.title, status=view.status)
