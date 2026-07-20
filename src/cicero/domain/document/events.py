@@ -23,5 +23,6 @@ class ExtractionCompleted(DocumentEvent):
 
 
 @dataclass(frozen=True)
-class ExtractionFailed(DocumentEvent):
-    """Extracting a document's source failed and it is now FAILED (ADR-012)."""
+class DocumentProcessingFailed(DocumentEvent):
+    """A document failed at some pipeline stage and is now FAILED — stage-agnostic,
+    matching the single ``FAILED`` terminal (ADR-014/016)."""

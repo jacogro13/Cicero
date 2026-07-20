@@ -24,12 +24,15 @@ logger = logging.getLogger(__name__)
 # The pipeline, as a table. ``None`` means the document is done — the intent is
 # dropped. Total over ``DocumentStatus`` on purpose: a new status without a decision
 # here is a document that would stall silently, so the omission fails a test instead.
-# ``EXTRACTING`` maps to the same command as ``UPLOADED`` because a stage interrupted
-# mid-flight is simply re-run (``mark_*`` is unguarded, ADR-002).
+# An in-flight status (``EXTRACTING``/``SUMMARISING``) maps to the same command as the
+# stage that precedes it, because a stage interrupted mid-flight is simply re-run
+# (``mark_*`` is unguarded, ADR-002). A new stage costs one entry here (ADR-014/016).
 NEXT_COMMAND: dict[DocumentStatus, type[Command] | None] = {
     DocumentStatus.UPLOADED: commands.ExtractDocument,
     DocumentStatus.EXTRACTING: commands.ExtractDocument,
-    DocumentStatus.EXTRACTED: None,
+    DocumentStatus.EXTRACTED: commands.SummariseDocument,
+    DocumentStatus.SUMMARISING: commands.SummariseDocument,
+    DocumentStatus.SUMMARISED: None,
     DocumentStatus.FAILED: None,
 }
 

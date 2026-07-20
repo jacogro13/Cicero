@@ -6,18 +6,21 @@ from types import TracebackType
 from typing import Self
 
 from cicero.domain.document.ports.document_repository import DocumentRepository
+from cicero.domain.document.ports.summary_read_model import SummaryReadModel
 from cicero.domain.messages import Event
 
 
 class UnitOfWork(ABC):
     """Port: the transaction boundary (ADR-003).
 
-    An async context manager exposing one repository per aggregate
-    (``uow.documents``, later ``uow.notes`` / …) so one block commits across all
-    of them atomically. Commit is explicit; any other exit rolls back.
+    An async context manager exposing the aggregate repositories and read-model
+    stores a transaction spans (``uow.documents``, ``uow.summaries``, …), so one
+    block commits across all of them atomically. Commit is explicit; any other exit
+    rolls back. Only aggregate repositories are event sources (``collect_new_events``).
     """
 
     documents: DocumentRepository
+    summaries: SummaryReadModel
 
     @abstractmethod
     async def __aenter__(self) -> Self: ...

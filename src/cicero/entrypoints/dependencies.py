@@ -20,17 +20,20 @@ from cicero.adapters.persistence.engine import (
 )
 from cicero.adapters.persistence.unit_of_work import make_sqlalchemy_uow_factory
 from cicero.adapters.storage.s3 import S3DocumentStorage
+from cicero.adapters.summarization.mock import MockSummarizer
 from cicero.domain.document import commands
 from cicero.domain.document.document_id import DocumentId
-from cicero.domain.document.events import DocumentUploaded
+from cicero.domain.document.events import DocumentUploaded, ExtractionCompleted
 from cicero.domain.document.ports.document_extractor import DocumentExtractor
 from cicero.domain.document.ports.document_storage import DocumentStorage
+from cicero.domain.document.ports.document_summarizer import DocumentSummarizer
 from cicero.domain.ports.unit_of_work import UnitOfWorkFactory
 from cicero.entrypoints.job_queue import JobQueue
 from cicero.entrypoints.settings import Settings, get_settings
 from cicero.services.document.advance_document import AdvanceDocument
 from cicero.services.document.delete_document import DeleteDocument
 from cicero.services.document.extract_document import ExtractDocument
+from cicero.services.document.summarise_document import SummariseDocument
 from cicero.services.document.upload_document import UploadDocument
 from cicero.services.messagebus import MessageBus
 
@@ -81,21 +84,26 @@ def get_document_extractor() -> DocumentExtractor:
     return PyMuPDFExtractor()
 
 
+def get_document_summarizer() -> DocumentSummarizer:
+    return MockSummarizer()
+
+
 def bootstrap(
     uow_factory: UnitOfWorkFactory,
     storage: DocumentStorage,
     extractor: DocumentExtractor,
+    summarizer: DocumentSummarizer,
     queue: JobQueue,
 ) -> MessageBus:
-    """Wire deps into the handlers and build the command/event maps (ADR-011/012/013/014).
+    """Wire deps into the handlers and build the command/event maps (ADR-011→016).
 
     Commands come from the edge: the routes issue upload/delete (reads bypass the bus,
     ADR-015); the job-queue worker derives its command from the document's status
-    (`pipeline.py`). Processing
-    stays an internal *reaction* — ``AdvanceDocument`` handles ``DocumentUploaded`` by
-    putting the document on the ``queue`` (an intent, not a command), so upload *causes*
-    extraction with no coupling. A further stage subscribes the same handler to its
-    event and adds a ``NEXT_COMMAND`` entry; nothing here grows a branch.
+    (`pipeline.py`). Each slow stage stays an internal *reaction* — ``AdvanceDocument``
+    handles a stage's completion event by putting the document back on the ``queue`` (an
+    intent, not a command), so upload *causes* extraction which *causes* summarization,
+    with no coupling. A further stage subscribes the same handler to its event and adds
+    a ``NEXT_COMMAND`` entry; nothing here grows a branch.
     """
     return MessageBus(
         uow_factory,
@@ -103,8 +111,12 @@ def bootstrap(
             commands.UploadDocument: UploadDocument(storage),
             commands.DeleteDocument: DeleteDocument(storage),
             commands.ExtractDocument: ExtractDocument(storage, extractor),
+            commands.SummariseDocument: SummariseDocument(storage, summarizer),
         },
-        event_handlers={DocumentUploaded: [AdvanceDocument(queue.enqueue)]},
+        event_handlers={
+            DocumentUploaded: [AdvanceDocument(queue.enqueue)],
+            ExtractionCompleted: [AdvanceDocument(queue.enqueue)],
+        },
     )
 
 
@@ -115,6 +127,7 @@ def build_message_bus(queue: JobQueue) -> MessageBus:
         get_uow_factory(),
         _make_storage(settings),
         get_document_extractor(),
+        get_document_summarizer(),
         queue,
     )
 

@@ -6,17 +6,20 @@ from typing import Self
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from cicero.adapters.persistence.repository import PostgresDocumentRepository
+from cicero.adapters.persistence.summary_read_model import PostgresSummaryReadModel
 from cicero.domain.ports.unit_of_work import UnitOfWork, UnitOfWorkFactory
 
 
 class SqlAlchemyUnitOfWork(UnitOfWork):
     """``UnitOfWork`` over a SQLAlchemy ``AsyncSession`` (ADR-006).
 
-    One ``async with`` block is one session/transaction. Commit is explicit; any
-    other exit rolls back (ADR-003).
+    One ``async with`` block is one session/transaction spanning the document
+    repository and the summaries read model. Commit is explicit; any other exit
+    rolls back (ADR-003).
     """
 
     documents: PostgresDocumentRepository
+    summaries: PostgresSummaryReadModel
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
@@ -24,6 +27,7 @@ class SqlAlchemyUnitOfWork(UnitOfWork):
     async def __aenter__(self) -> Self:
         self._session = self._session_factory()
         self.documents = PostgresDocumentRepository(self._session)
+        self.summaries = PostgresSummaryReadModel(self._session)
         return self
 
     async def __aexit__(

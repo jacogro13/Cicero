@@ -24,3 +24,10 @@ class ExtractDocument(Command):
     """Extract a document's source to Markdown — issued by the job-queue worker (ADR-013)."""
 
     document_id: DocumentId
+
+
+@dataclass(frozen=True)
+class SummariseDocument(Command):
+    """Summarise a document's extracted text — issued by the job-queue worker (ADR-016)."""
+
+    document_id: DocumentId

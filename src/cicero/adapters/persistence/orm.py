@@ -42,6 +42,15 @@ documents = Table(
     Column("status", Enum(DocumentStatus, name="document_status"), nullable=False),
 )
 
+# The summaries read model (ADR-016): a denormalized projection, so it is a plain
+# table reached via Core statements — not imperatively mapped onto an aggregate.
+summaries = Table(
+    "summaries",
+    metadata,
+    Column("document_id", DocumentIdType, primary_key=True),
+    Column("text", String, nullable=False),
+)
+
 _mappers_started = False
 
 

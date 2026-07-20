@@ -7,15 +7,19 @@ extraction.
 from tests.fakes.extraction import StubDocumentExtractor
 from tests.fakes.persistence import (
     InMemoryDocumentRepository,
+    InMemorySummaryReadModel,
     InMemoryUnitOfWork,
     make_in_memory_uow_factory,
 )
 from tests.fakes.storage import InMemoryDocumentStorage
+from tests.fakes.summarization import StubDocumentSummarizer
 
 __all__ = [
     "InMemoryDocumentRepository",
+    "InMemorySummaryReadModel",
     "InMemoryUnitOfWork",
     "make_in_memory_uow_factory",
     "InMemoryDocumentStorage",
     "StubDocumentExtractor",
+    "StubDocumentSummarizer",
 ]

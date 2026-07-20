@@ -13,6 +13,7 @@ from typing import Self
 from cicero.domain.document.document import Document
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.ports.document_repository import DocumentRepository
+from cicero.domain.document.ports.summary_read_model import SummaryReadModel
 from cicero.domain.ports.unit_of_work import UnitOfWork, UnitOfWorkFactory
 
 
@@ -61,11 +62,40 @@ class InMemoryDocumentRepository(DocumentRepository):
         self._pending_deletes.clear()
 
 
-class InMemoryUnitOfWork(UnitOfWork):
-    """One ``async with`` block is one transaction over the shared store."""
+class InMemorySummaryReadModel(SummaryReadModel):
+    """Shared summaries dict + a per-transaction write buffer, mirroring the
+    repository's commit/rollback so a summary is visible only once committed."""
 
-    def __init__(self, store: dict[DocumentId, Document]) -> None:
+    def __init__(self, store: dict[DocumentId, str]) -> None:
+        self._store = store
+        self._pending: dict[DocumentId, str] = {}
+
+    async def save(self, document_id: DocumentId, text: str) -> None:
+        self._pending[document_id] = text
+
+    async def get(self, document_id: DocumentId) -> str | None:
+        if document_id in self._pending:
+            return self._pending[document_id]
+        return self._store.get(document_id)
+
+    def flush(self) -> None:
+        self._store.update(self._pending)
+        self._pending.clear()
+
+    def discard(self) -> None:
+        self._pending.clear()
+
+
+class InMemoryUnitOfWork(UnitOfWork):
+    """One ``async with`` block is one transaction over the shared stores."""
+
+    def __init__(
+        self,
+        store: dict[DocumentId, Document],
+        summary_store: dict[DocumentId, str],
+    ) -> None:
         self.documents = InMemoryDocumentRepository(store)
+        self.summaries = InMemorySummaryReadModel(summary_store)
 
     async def __aenter__(self) -> Self:
         return self
@@ -78,27 +108,30 @@ class InMemoryUnitOfWork(UnitOfWork):
     ) -> None:
         # Rollback by default: commit() must be explicit, so any writes not
         # committed in this block are discarded — on a clean exit or on error.
-        # rollback() after a commit() is a no-op (the buffer is already empty).
+        # rollback() after a commit() is a no-op (the buffers are already empty).
         await self.rollback()
 
     async def commit(self) -> None:
         self.documents.flush()
+        self.summaries.flush()
 
     async def rollback(self) -> None:
         self.documents.discard()
+        self.summaries.discard()
 
 
 def make_in_memory_uow_factory(
     store: dict[DocumentId, Document] | None = None,
 ) -> UnitOfWorkFactory:
-    """Return a zero-arg factory yielding fresh UoWs over one shared store.
+    """Return a zero-arg factory yielding fresh UoWs over shared stores.
 
     All UoWs from a given factory see the same committed data, so tests can
     write in one transaction and read it back in another.
     """
     backing_store: dict[DocumentId, Document] = {} if store is None else store
+    summary_store: dict[DocumentId, str] = {}
 
     def factory() -> InMemoryUnitOfWork:
-        return InMemoryUnitOfWork(backing_store)
+        return InMemoryUnitOfWork(backing_store, summary_store)
 
     return factory
