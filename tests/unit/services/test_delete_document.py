@@ -7,17 +7,24 @@ Removes the metadata then the source blob (ADR-004 ordering); an unknown id rais
 import pytest
 
 from cicero.domain.document import commands
+from cicero.domain.document.document import Document
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.exceptions import DocumentNotFound
 from cicero.services.document.delete_document import DeleteDocument
-from cicero.services.document.upload_document import UploadDocument
 
 from tests.fakes import InMemoryDocumentStorage, make_in_memory_uow_factory
 
 
-async def _upload(uow_factory, storage):
-    command = commands.UploadDocument(title="Clean Code", content=b"%PDF-1.4 bytes")
-    return await UploadDocument(storage)(command, uow_factory())
+async def _stored_document(uow_factory, storage):
+    """Arrange DeleteDocument's precondition — a persisted document with its source
+    blob in storage — built directly rather than via UploadDocument, so this suite
+    exercises only the delete handler."""
+    document = Document.create("Clean Code")
+    async with uow_factory() as uow:
+        await uow.documents.save(document)
+        await uow.commit()
+    await storage.put(document.source_key, b"%PDF-1.4 bytes")
+    return document
 
 
 async def _delete(uow_factory, storage, document_id):
@@ -30,7 +37,7 @@ class TestDeleteDocument:
     async def test_deleted_document_is_no_longer_persisted(self):
         uow_factory = make_in_memory_uow_factory()
         storage = InMemoryDocumentStorage()
-        document = await _upload(uow_factory, storage)
+        document = await _stored_document(uow_factory, storage)
 
         await _delete(uow_factory, storage, document.id)
 
@@ -40,7 +47,7 @@ class TestDeleteDocument:
     async def test_deletes_the_source_file_from_storage(self):
         uow_factory = make_in_memory_uow_factory()
         storage = InMemoryDocumentStorage()
-        document = await _upload(uow_factory, storage)
+        document = await _stored_document(uow_factory, storage)
 
         await _delete(uow_factory, storage, document.id)
 

@@ -7,11 +7,11 @@ document never points at a missing blob. An unknown id raises ``DocumentNotFound
 import pytest
 
 from cicero.domain.document import commands
+from cicero.domain.document.document import Document
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.document_status import DocumentStatus
 from cicero.domain.document.exceptions import DocumentNotFound
 from cicero.services.document.extract_document import ExtractDocument
-from cicero.services.document.upload_document import UploadDocument
 
 from tests.fakes import (
     InMemoryDocumentStorage,
@@ -20,9 +20,16 @@ from tests.fakes import (
 )
 
 
-async def _upload(uow_factory, storage):
-    command = commands.UploadDocument(title="Clean Code", content=b"%PDF-1.4 source bytes")
-    return await UploadDocument(storage)(command, uow_factory())
+async def _uploaded_document(uow_factory, storage):
+    """Arrange ExtractDocument's precondition — an UPLOADED document with its source
+    blob in storage — built directly rather than via UploadDocument, so this suite
+    exercises only the extract handler."""
+    document = Document.create("Clean Code")
+    async with uow_factory() as uow:
+        await uow.documents.save(document)
+        await uow.commit()
+    await storage.put(document.source_key, b"%PDF-1.4 source bytes")
+    return document
 
 
 async def _extract(uow_factory, storage, extractor, document_id):
@@ -39,7 +46,7 @@ class TestExtractDocument:
     async def test_marks_the_document_extracted(self):
         uow_factory = make_in_memory_uow_factory()
         storage = InMemoryDocumentStorage()
-        document = await _upload(uow_factory, storage)
+        document = await _uploaded_document(uow_factory, storage)
 
         await _extract(
             uow_factory, storage, StubDocumentExtractor("# Clean Code"), document.id
@@ -52,7 +59,7 @@ class TestExtractDocument:
     async def test_stores_the_extracted_markdown_at_the_content_key(self):
         uow_factory = make_in_memory_uow_factory()
         storage = InMemoryDocumentStorage()
-        document = await _upload(uow_factory, storage)
+        document = await _uploaded_document(uow_factory, storage)
 
         await _extract(
             uow_factory, storage, StubDocumentExtractor("# Clean Code\n\nBody."), document.id
@@ -67,7 +74,7 @@ class TestExtractDocument:
         # already be EXTRACTING, i.e. committed before the heavy work begins.
         uow_factory = make_in_memory_uow_factory()
         storage = InMemoryDocumentStorage()
-        document = await _upload(uow_factory, storage)
+        document = await _uploaded_document(uow_factory, storage)
         seen: list[DocumentStatus] = []
 
         class _StatusSpyExtractor(StubDocumentExtractor):
@@ -84,7 +91,7 @@ class TestExtractDocument:
     async def test_extraction_failure_marks_failed_and_stores_no_content(self):
         uow_factory = make_in_memory_uow_factory()
         storage = InMemoryDocumentStorage()
-        document = await _upload(uow_factory, storage)
+        document = await _uploaded_document(uow_factory, storage)
 
         await _extract(uow_factory, storage, _ExplodingExtractor(), document.id)
 
