@@ -44,32 +44,38 @@ imports the other); the rule is enforced in CI by import-linter.
 
 | Layer | Responsibility | Status |
 |-------|----------------|--------|
-| `domain/` | Entities, value objects, ports, messages, errors — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; messages `Command`/`Event` + `Upload`/`Extract`/`Delete` commands, `DocumentEvent` base + `DocumentUploaded`/`ExtractionCompleted`/`ExtractionFailed` events; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`, `DocumentExtractor`; `DomainError` hierarchy) |
-| `services/` | Command/event handlers + the message bus that routes them, and the read-side `views` that bypass it | **Exists** (`MessageBus`; command handlers `UploadDocument`, `DeleteDocument`, `ExtractDocument`; the `AdvanceDocument` event handler on `DocumentUploaded`; `views.list_documents` returning the `DocumentView` read model) |
-| `adapters/` | Implements domain ports against real infra (DB, object storage, extraction, LLM) | **Exists** (`PostgresDocumentRepository`, `SqlAlchemyUnitOfWork`, `S3DocumentStorage`, `PyMuPDFExtractor`; LLM to come) |
-| `entrypoints/` | FastAPI app, routes, schemas, error mapping, the serial job queue, the composition root (settings, engine lifespan, startup provisioning, bus bootstrap) | **Exists** (`GET /health`; `POST`/`GET`/`DELETE /api/documents`; `JobQueue` + the `NEXT_COMMAND` stage table + restart recovery; live wiring over Postgres + S3) |
+| `domain/` | Entities, value objects, ports, messages, errors — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; messages `Command`/`Event` + `Upload`/`Extract`/`Summarise`/`Delete` commands, `DocumentEvent` base + `DocumentUploaded`/`ExtractionCompleted`/`DocumentProcessingFailed` events; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`, `DocumentExtractor`, `DocumentSummarizer`, `SummaryReadModel`; `DomainError` hierarchy) |
+| `services/` | Command/event handlers + the message bus that routes them, and the read-side `views` that bypass it | **Exists** (`MessageBus`; command handlers `UploadDocument`, `DeleteDocument`, `ExtractDocument`, `SummariseDocument`; the `AdvanceDocument` event handler on `DocumentUploaded`/`ExtractionCompleted`; `views.list_documents`/`get_document_summary` returning read models) |
+| `adapters/` | Implements domain ports against real infra (DB, object storage, extraction, LLM) | **Exists** (`PostgresDocumentRepository`, `PostgresSummaryReadModel`, `SqlAlchemyUnitOfWork`, `S3DocumentStorage`, `PyMuPDFExtractor`, `MockSummarizer`; OpenAI-compatible LLM to come) |
+| `entrypoints/` | FastAPI app, routes, schemas, error mapping, the serial job queue, the composition root (settings, engine lifespan, startup provisioning, bus bootstrap) | **Exists** (`GET /health`; `POST`/`GET`/`DELETE /api/documents`, `GET /api/documents/{id}/summary`; `JobQueue` + the `NEXT_COMMAND` stage table + restart recovery; live wiring over Postgres + S3) |
 
 ## Document lifecycle
 
 `Document` is the aggregate root. Its status is a guarded state machine —
-`UPLOADED → EXTRACTING → EXTRACTED | FAILED` — with transitions encapsulated as
-entity methods, not a free `status` setter. Each member names the **pipeline stage
+`UPLOADED → EXTRACTING → EXTRACTED → SUMMARISING → SUMMARISED`, with `FAILED` the
+single terminal any stage falls to — with transitions encapsulated as entity
+methods, not a free `status` setter. Each member names the **pipeline stage
 reached**, not readiness (ADR-014): that is what lets the edge derive the next
 command from a stored status, and what lets a later stage append to the chain
 instead of redefining a terminal name. The internal extracted text (an opaque
-locator, never shown to the reader) exists from EXTRACTED onwards. `content_key` is not
-lifecycle state — it is the identity-derived address of that text (`source_key`'s
-twin), always computable, so nothing has to be set or kept in sync on transition.
-See **[ADR-002](adr/002-document-status-state-machine.md)** and
-**[ADR-014](adr/014-status-driven-pipeline-advance.md)**.
+locator, never shown to the reader) exists from EXTRACTED onwards; the summary — the
+read experience — from SUMMARISED. `content_key` is not lifecycle state — it is the
+identity-derived address of that text (`source_key`'s twin), always computable, so
+nothing has to be set or kept in sync on transition. See
+**[ADR-002](adr/002-document-status-state-machine.md)**,
+**[ADR-014](adr/014-status-driven-pipeline-advance.md)**, and
+**[ADR-016](adr/016-ai-summaries-and-the-summary-read-model.md)**.
 
 ```mermaid
 stateDiagram-v2
     [*] --> UPLOADED
     UPLOADED --> EXTRACTING: mark_extracting()
     EXTRACTING --> EXTRACTED: mark_extracted()
+    EXTRACTED --> SUMMARISING: mark_summarising()
+    SUMMARISING --> SUMMARISED: mark_summarised()
     EXTRACTING --> FAILED: mark_failed()
-    EXTRACTED --> [*]
+    SUMMARISING --> FAILED: mark_failed()
+    SUMMARISED --> [*]
     FAILED --> [*]
 ```
 
@@ -164,8 +170,9 @@ A **`Command`** (imperative — `commands.UploadDocument`) is routed to exactly 
 handler; an **`Event`** (a past-tense fact — `DocumentUploaded`) to zero or more.
 Messages are pure data in the domain (`domain/<agg>/commands.py` + `events.py`,
 bases in `domain/messages.py`). The **aggregate is the event source**: `Document`
-records events off its own lifecycle (`create()` → `DocumentUploaded`; further
-status methods raise `ExtractionCompleted`/`ExtractionFailed`). After each handler
+records events off its own lifecycle (`create()` → `DocumentUploaded`;
+`mark_extracted()` → `ExtractionCompleted`; `mark_failed()` →
+`DocumentProcessingFailed`). After each handler
 the bus **drains the Unit of Work's new events** — `collect_new_events()` reads them
 off the aggregates the repository has `seen` (registered by the port itself on
 every accessor, delete included) — and keeps
@@ -191,14 +198,16 @@ See **[ADR-011](adr/011-message-bus-commands-and-events.md)**,
 
 Reads **bypass the bus** (ADR-015). A **`services/views.py`** query module holds
 functions that take the `uow_factory`, open a short read-only transaction, and return
-a **read model** — `views.list_documents` → `list[DocumentView]`, no command, no
-commit. `GET /api/documents` calls it directly; the old `ListDocuments` command is
-retired. `DocumentView` is a distinct read model, decoupled from both the domain
-`Document` (the write model) and the `DocumentResponse` wire **DTO** — the seam that
-lets the reader experience diverge from the aggregate as it grows. This first phase
-still reads through the aggregate repository; a **denormalized read model maintained by
-event handlers** arrives only where a view's shape genuinely departs from the
-aggregate's. See **[ADR-015](adr/015-cqrs-read-side.md)**.
+a **read model** — no command, no commit. `views.list_documents` → `list[DocumentView]`
+(`GET /api/documents`) still reads through the aggregate repository, since a document
+list does not diverge from the aggregate. `views.get_document_summary` →
+`SummaryView | None` (`GET /api/documents/{id}/summary`, 404 when absent) reads the
+**denormalized `summaries` store** instead — the first view whose shape genuinely
+departs from the write model, maintained by the summarisation stage (ADR-016). A read
+model is decoupled from both the domain `Document` (the write model) and the wire
+**DTO** (`DocumentResponse`/`SummaryResponse`) — the seam that lets the reader
+experience diverge from the aggregate. See **[ADR-015](adr/015-cqrs-read-side.md)** and
+**[ADR-016](adr/016-ai-summaries-and-the-summary-read-model.md)**.
 
 ## Deleting a document
 
@@ -222,8 +231,8 @@ subscribe to). The service never mints a storage key: `content_key` is the
 document's own identity-derived address (`documents/{id}/content`). Storage-first
 mirrors upload (ADR-004): the blob is written before `EXTRACTED` is committed, so an
 EXTRACTED document never points at a missing content file. Extraction failure commits
-`FAILED` and raises `ExtractionFailed` (status is the outcome channel); an unknown
-id raises `DocumentNotFound`. The real extractor is **`PyMuPDFExtractor`**
+`FAILED` and raises `DocumentProcessingFailed` (status is the outcome channel); an
+unknown id raises `DocumentNotFound`. The real extractor is **`PyMuPDFExtractor`**
 (`pymupdf4llm`, in-process, offloaded to the anyio thread); a stub backs the unit
 tests. See **[ADR-009](adr/009-content-extraction-and-the-extract-document-use-case.md)**
 and **[ADR-012](adr/012-pipeline-as-events.md)**.
@@ -245,6 +254,22 @@ sequenceDiagram
     end
 ```
 
+## Summarising a document
+
+**`SummariseDocument`** is the next stage on the same conveyor — a command handler the
+worker issues once a document reaches `EXTRACTED`. It mirrors extraction: commit
+`SUMMARISING` first, read the extracted Markdown (`content_key`), summarise it through
+the **`DocumentSummarizer`** port outside any transaction, then commit `SUMMARISED`. The
+summary is the **read experience**, so unlike the internal extracted text it is
+persisted as a **read model** — the summarisation transaction writes `uow.summaries`
+*with* `mark_summarised`, so `SUMMARISED` ⇔ the summary is readable (no partial state a
+reader could hit). Failure commits `FAILED`; an unknown id raises `DocumentNotFound`.
+The default adapter is **`MockSummarizer`** (canned text, self-contained — the app
+summarises with no external LLM); any OpenAI-compatible endpoint plugs in behind the
+same port. Wiring the stage cost one status pair, one `NEXT_COMMAND` entry, and one
+subscription of `AdvanceDocument` to `ExtractionCompleted` — the bus payoff. See
+**[ADR-016](adr/016-ai-summaries-and-the-summary-read-model.md)**.
+
 ## Background jobs: the serial queue
 
 Extraction (and the summaries and podcast ahead) is slow and memory-heavy, so it
@@ -253,13 +278,15 @@ runs **off the request path** on a process-wide serial **`JobQueue`**
 `concurrency` (default 1 → one document at a time), so a batch upload can enqueue
 freely without ever running more than N heavy jobs at once — the memory guard.
 
-The wiring keeps commands at the edge. The `DocumentUploaded` handler
-(**`AdvanceDocument`**) only enqueues an intent and names no stage; the **worker**
-reads the document's persisted status back and issues the command that status calls
-for — so the command is born at an entrypoint, never synthesised in a handler. Upload
-returns immediately as `UPLOADED`; the document reaches `EXTRACTED`/`FAILED`
-asynchronously (clients poll `GET`). The queue lives on `app.state`, created per event
-loop in the lifespan.
+The wiring keeps commands at the edge. `AdvanceDocument` — subscribed to each stage's
+completion event (`DocumentUploaded`, `ExtractionCompleted`, …) — only enqueues an
+intent and names no stage; the **worker** reads the document's persisted status back
+and issues the command that status calls for, so the command is born at an entrypoint,
+never synthesised in a handler. Each completed stage re-enqueues the document, so it
+walks the whole chain — upload *causes* extraction *causes* summarization — without any
+stage knowing the next. Upload returns immediately as `UPLOADED`; the document reaches
+`SUMMARISED`/`FAILED` asynchronously (clients poll `GET`). The queue lives on
+`app.state`, created per event loop in the lifespan.
 
 **The pipeline's order lives in one table**, `NEXT_COMMAND` in
 `entrypoints/pipeline.py`, mapping each status to the command that advances it (or to
@@ -287,10 +314,12 @@ sequenceDiagram
     B->>B: DocumentUploaded → AdvanceDocument
     B->>Q: enqueue(document_id)
     R-->>R: 201 UPLOADED (returns now)
-    Q->>K: document_id
-    K->>K: read status → NEXT_COMMAND
-    K->>B: handle(ExtractDocument)
-    B->>B: EXTRACTING → … → EXTRACTED/FAILED
+    loop until a terminal status
+        Q->>K: document_id
+        K->>K: read status → NEXT_COMMAND
+        K->>B: handle(Extract/Summarise…)
+        B->>B: run stage; completion event → AdvanceDocument re-enqueues
+    end
 ```
 
 ## Errors: the domain raises, the entrypoints map
@@ -380,12 +409,12 @@ when the slice is built test-first (so the ADR reflects real, validated code):
 - **URL ingest** — extraction handles PDFs (see "Extracting a document"); adding a
   web article as a document (trafilatura/Playwright) extends the `DocumentExtractor`
   port when that slice lands. _ADR to follow._
-- **AI summaries (the read experience)** — the extracted text is summarized into
-  what the user actually reads: per-chapter summaries for a book, a single
-  summary for an article. Built on top: chat over the document (any source) and,
-  **for articles only (for now)**, a generated podcast (script + audio). Mock
-  adapters by default (keeping the app self-contained);
-  any OpenAI-compatible endpoint pluggable (optional Ollama compose profile).
+- **AI summaries (the read experience)** — a single summary per document exists (see
+  "Summarising a document"). Still ahead: **per-chapter** summaries once chapter
+  structure (TOC) and document kind land, and map-reduce for oversized chapters. Built
+  on top: chat over the document (any source) and, **for articles only (for now)**, a
+  generated podcast (script + audio). Mock adapters by default (self-contained); any
+  OpenAI-compatible endpoint pluggable (optional Ollama compose profile).
   _ADRs to follow with those slices._
 - **Frontends** — an admin SPA (upload/delete/trigger jobs) and a reader SPA
   (read/notes/chat). _ADRs to follow._
@@ -414,13 +443,16 @@ the code on purpose. Implemented so far:
 - The extraction **port** (`DocumentExtractor`) with two implementations: a stub
   for unit tests, and **`PyMuPDFExtractor`** (`adapters/extraction/`, `pymupdf4llm`
   in-process) proven against a real generated PDF in the `tests/integration/` layer.
+- The summarization **port** (`DocumentSummarizer`) with two implementations: a stub
+  for unit tests, and the self-contained **`MockSummarizer`** (`adapters/summarization/`).
 - The **message bus** (the `services/` layer): one `MessageBus.handle()` routes a
   `Command` to its single handler and an `Event` to zero or more, draining the
   Unit of Work's new events after each handler. The `Document` aggregate raises the
-  events (`DocumentUploaded` on `create()`, `ExtractionCompleted`/`ExtractionFailed`
-  on the outcome). Commands enter only at the edge; internal reactions are events, so
-  **upload causes extraction** by `AdvanceDocument` subscribing to `DocumentUploaded`
-  — no route-level coupling, and no stage named in a handler.
+  events (`DocumentUploaded` on `create()`, `ExtractionCompleted` /
+  `DocumentProcessingFailed` on the outcome). Commands enter only at the edge; internal
+  reactions are events, so **upload causes extraction causes summarization** by
+  `AdvanceDocument` subscribing to each stage's completion event — no route-level
+  coupling, and no stage named in a handler.
 - The use cases (the `services/` layer): **`UploadDocument`**, over the
   `DocumentStorage` port — stores the source file then persists the document,
   file-first so a failure can only orphan a blob; and **`DeleteDocument`**, which
@@ -428,16 +460,22 @@ the code on purpose. Implemented so far:
   `DocumentNotFound` for an unknown id — both command handlers reached through the bus.
   **`ExtractDocument`**, a command handler issued by the job-queue worker, drives
   `EXTRACTING → EXTRACTED/FAILED`, storing the extracted Markdown at `content_key`
-  (file-first, like upload).
+  (file-first, like upload). **`SummariseDocument`**, the next worker-issued stage,
+  drives `SUMMARISING → SUMMARISED/FAILED`, writing the summary read model in the same
+  transaction as `mark_summarised`.
 - The **read side** (`services/views.py`): **`views.list_documents`** returns every
-  stored document as the `DocumentView` read model, bypassing the bus (ADR-015).
+  stored document as the `DocumentView` read model (through the aggregate), and
+  **`views.get_document_summary`** serves the summary from the denormalized `summaries`
+  store (`GET /api/documents/{id}/summary`, 404 when absent) — both bypass the bus
+  (ADR-015/016). The Postgres read model (`PostgresSummaryReadModel`, Core over a
+  `summaries` table) is proven end to end in the composition integration test.
 - The **serial job queue** (`entrypoints/`): a `JobQueue` drains `DocumentId` intents
-  with bounded concurrency, so extraction (and the summaries/podcast ahead) runs off
-  the request path — `AdvanceDocument` enqueues, and the worker derives the command
+  with bounded concurrency, so extraction and summarization (and the podcast ahead) run
+  off the request path — `AdvanceDocument` enqueues, and the worker derives the command
   from the document's persisted status via the `NEXT_COMMAND` table, so no handler
   names a stage. Startup `reconcile_unfinished_documents` asks that same table which
   documents a restart left unfinished, with no jobs table. Proven by an integration
-  test that uploads a real PDF and polls the live app to `EXTRACTED`.
+  test that uploads a real PDF and polls the live app through to `SUMMARISED`.
 - The **composition root** (`entrypoints/`): environment-driven `Settings`, a
   per-process engine wired to the real adapters (the infra seams retired), and a
   `lifespan` that provisions the schema + bucket, builds the process-wide bus, and
@@ -467,3 +505,4 @@ references a decision made later.
 - [ADR-013 — Serial job queue and restart recovery](adr/013-serial-job-queue-and-restart-recovery.md)
 - [ADR-014 — Status-driven pipeline advance](adr/014-status-driven-pipeline-advance.md)
 - [ADR-015 — A CQRS read side: reads bypass the bus](adr/015-cqrs-read-side.md)
+- [ADR-016 — AI summaries: a pipeline stage and its read model](adr/016-ai-summaries-and-the-summary-read-model.md)
