@@ -6,9 +6,9 @@ from cicero.domain.document.document import Document
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.document_status import DocumentStatus
 from cicero.domain.document.events import (
+    DocumentProcessingFailed,
     DocumentUploaded,
     ExtractionCompleted,
-    ExtractionFailed,
 )
 from cicero.domain.document.exceptions import InvalidDocumentTitle
 
@@ -56,13 +56,25 @@ class TestDocumentStatusLifecycle:
         # Names the stage the document *finished*, not "readable": status encodes
         # pipeline position, so a later stage can follow it (ADR-014).
         doc = Document.create("Any Title")
-        doc.mark_extracting()
         doc.mark_extracted()
         assert doc.status is DocumentStatus.EXTRACTED
 
-    def test_mark_failed_transitions_to_failed(self):
+    def test_mark_summarising_transitions_to_summarising(self):
+        # mark_* is unguarded (ADR-014), so this asserts the transition alone —
+        # no need to walk the prior stages, which would imply a guard that isn't there.
         doc = Document.create("Any Title")
-        doc.mark_extracting()
+        doc.mark_summarising()
+        assert doc.status is DocumentStatus.SUMMARISING
+
+    def test_mark_summarised_transitions_to_summarised(self):
+        doc = Document.create("Any Title")
+        doc.mark_summarised()
+        assert doc.status is DocumentStatus.SUMMARISED
+
+    def test_mark_failed_transitions_to_failed(self):
+        # One terminal for any spine stage that fails — extraction or summarization
+        # land in the same FAILED (ADR-014/016); which stage is in the logs.
+        doc = Document.create("Any Title")
         doc.mark_failed()
         assert doc.status is DocumentStatus.FAILED
 
@@ -83,16 +95,33 @@ class TestDocumentEvents:
     def test_mark_extracted_records_an_extraction_completed_event(self):
         doc = Document.create("Any Title")
         doc.collect_events()  # drop the creation event
-        doc.mark_extracting()
         doc.mark_extracted()
         assert doc.events == [ExtractionCompleted(document_id=doc.id)]
 
-    def test_mark_failed_records_an_extraction_failed_event(self):
+    def test_in_flight_markers_raise_no_event(self):
+        # EXTRACTING and SUMMARISING are in-flight states nothing subscribes to;
+        # only creation, completion, and failure are facts worth publishing (ADR-011/016).
         doc = Document.create("Any Title")
         doc.collect_events()  # drop the creation event
         doc.mark_extracting()
+        doc.mark_summarising()
+        assert doc.events == []
+
+    def test_mark_summarised_records_no_event(self):
+        # SUMMARISED is the linear spine's terminal; nothing consumes it yet, so it
+        # raises no event (non-speculative, ADR-016).
+        doc = Document.create("Any Title")
+        doc.collect_events()  # drop the creation event
+        doc.mark_summarising()
+        doc.mark_summarised()
+        assert doc.events == []
+
+    def test_mark_failed_records_a_document_processing_failed_event(self):
+        # A single, stage-agnostic failure fact for the single FAILED terminal (ADR-016).
+        doc = Document.create("Any Title")
+        doc.collect_events()  # drop the creation event
         doc.mark_failed()
-        assert doc.events == [ExtractionFailed(document_id=doc.id)]
+        assert doc.events == [DocumentProcessingFailed(document_id=doc.id)]
 
     def test_events_are_excluded_from_equality(self):
         # Two documents differing only in pending events are still equal, so a

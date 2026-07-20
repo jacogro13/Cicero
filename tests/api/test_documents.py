@@ -22,6 +22,7 @@ from cicero.entrypoints.main import create_app
 from tests.fakes import (
     InMemoryDocumentStorage,
     StubDocumentExtractor,
+    StubDocumentSummarizer,
     make_in_memory_uow_factory,
 )
 
@@ -35,6 +36,7 @@ def _client() -> TestClient:
         uow_factory,
         InMemoryDocumentStorage(),
         StubDocumentExtractor("# Clean Code"),
+        StubDocumentSummarizer("A crisp summary."),
         JobQueue(),
     )
     # Writes ride the bus; reads bypass it (ADR-015). Both share one store so a
@@ -107,6 +109,20 @@ class TestDeleteDocument:
         client = _client()
 
         response = client.delete(f"/api/documents/{uuid.uuid4()}")
+
+        assert response.status_code == 404
+
+
+class TestDocumentSummary:
+    def test_summary_is_404_until_the_document_is_summarised(self):
+        # The queue is unstarted here, so a freshly posted document has no summary
+        # yet — the read route reports 404 rather than an empty body (ADR-016).
+        client = _client()
+        created = client.post(
+            "/api/documents", data={"title": "Clean Code"}, files={"file": _PDF}
+        ).json()
+
+        response = client.get(f"/api/documents/{created['id']}/summary")
 
         assert response.status_code == 404
 

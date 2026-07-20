@@ -98,7 +98,7 @@ def _poll_status(client: TestClient, document_id: str, *, timeout: float = 10.0)
     raise AssertionError(f"document {document_id} never reached a terminal state")
 
 
-def test_upload_is_extracted_off_the_request_path(live_stack: dict):
+def test_upload_runs_the_pipeline_off_the_request_path(live_stack: dict):
     pdf = _make_pdf("Hello Cicero")
     with TestClient(create_app()) as client:  # __enter__ starts the job queue
         created = client.post(
@@ -106,8 +106,14 @@ def test_upload_is_extracted_off_the_request_path(live_stack: dict):
             data={"title": "Clean Code"},
             files={"file": ("clean-code.pdf", pdf, "application/pdf")},
         ).json()
-        # Upload returns immediately; extraction has not run on the request path.
+        # Upload returns immediately; no stage has run on the request path.
         assert created["status"] == DocumentStatus.UPLOADED.value
 
-        # The queue worker extracts through real PyMuPDF and MinIO, reaching EXTRACTED.
-        assert _poll_status(client, created["id"]) == DocumentStatus.EXTRACTED.value
+        # The queue worker drives extraction (real PyMuPDF + MinIO) then summarization
+        # (mock) to the terminal SUMMARISED, all off the request path.
+        assert _poll_status(client, created["id"]) == DocumentStatus.SUMMARISED.value
+
+        # The summary read side serves it back over real Postgres.
+        summary = client.get(f"/api/documents/{created['id']}/summary")
+        assert summary.status_code == 200
+        assert summary.json()["text"]

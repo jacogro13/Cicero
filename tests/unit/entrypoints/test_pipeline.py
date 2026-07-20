@@ -61,7 +61,21 @@ class TestStageTable:
 
     @pytest.mark.parametrize(
         "status",
-        [DocumentStatus.EXTRACTED, DocumentStatus.FAILED],
+        [DocumentStatus.EXTRACTED, DocumentStatus.SUMMARISING],
+    )
+    def test_pending_summarization_advances_to_summarise_document(self, status):
+        # Extraction done → the next stage is summarization; a new stage cost one
+        # NEXT_COMMAND entry and nothing else (ADR-016 on ADR-014's conveyor).
+        document_id = DocumentId.new()
+
+        assert next_command(status, document_id) == commands.SummariseDocument(
+            document_id=document_id
+        )
+        assert has_next_stage(status)
+
+    @pytest.mark.parametrize(
+        "status",
+        [DocumentStatus.SUMMARISED, DocumentStatus.FAILED],
     )
     def test_terminal_statuses_have_no_next_command(self, status):
         assert next_command(status, DocumentId.new()) is None
@@ -74,6 +88,12 @@ class TestStageTable:
         document_id = DocumentId.new()
         assert next_command(DocumentStatus.EXTRACTING, document_id) == next_command(
             DocumentStatus.UPLOADED, document_id
+        )
+
+    def test_summarising_re_advances_so_an_interrupted_stage_reruns(self):
+        document_id = DocumentId.new()
+        assert next_command(DocumentStatus.SUMMARISING, document_id) == next_command(
+            DocumentStatus.EXTRACTED, document_id
         )
 
 
@@ -91,7 +111,7 @@ class TestPipelineConsumer:
         assert bus.handled == [commands.ExtractDocument(document_id=document.id)]
 
     async def test_a_terminal_document_dispatches_nothing(self):
-        document = _document(DocumentStatus.EXTRACTED)
+        document = _document(DocumentStatus.SUMMARISED)
         bus = RecordingBus()
         consume = make_pipeline_consumer(
             bus, make_in_memory_uow_factory({document.id: document})

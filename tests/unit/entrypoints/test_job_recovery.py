@@ -31,13 +31,15 @@ class TestReconcileUnfinishedDocuments:
     async def test_reenqueues_every_document_with_a_next_stage(self):
         # UPLOADED counts too: a crash between the upload commit and the enqueue
         # used to strand the document (ADR-013 consequence), and no longer does.
+        # Every status a stage still owes work on is re-enqueued (ADR-014/016).
         unfinished = [
-            _document(DocumentStatus.EXTRACTING),
-            _document(DocumentStatus.EXTRACTING),
             _document(DocumentStatus.UPLOADED),
+            _document(DocumentStatus.EXTRACTING),
+            _document(DocumentStatus.EXTRACTED),
+            _document(DocumentStatus.SUMMARISING),
         ]
         terminal = [
-            _document(DocumentStatus.EXTRACTED),
+            _document(DocumentStatus.SUMMARISED),
             _document(DocumentStatus.FAILED),
         ]
         store = {d.id: d for d in unfinished + terminal}
@@ -51,7 +53,7 @@ class TestReconcileUnfinishedDocuments:
         await queue.join()
         await queue.stop()
 
-        assert count == 3
+        assert count == 4
         assert set(drained) == {d.id for d in unfinished}
 
     async def test_nothing_to_recover_returns_zero(self):
