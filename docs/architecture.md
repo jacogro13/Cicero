@@ -318,7 +318,7 @@ sequenceDiagram
         Q->>K: document_id
         K->>K: read status → NEXT_COMMAND
         K->>B: handle(Extract/Summarise…)
-        B->>B: run stage; completion event → AdvanceDocument re-enqueues
+        B->>B: run the stage — its completion event re-enqueues via AdvanceDocument
     end
 ```
 
