@@ -21,16 +21,18 @@ feature, so this is the point of genuine need to split reads out.
 ## Decision
 
 **Reads bypass the bus.** A `services/views.py` module holds query functions that take
-a `uow_factory`, open a short read-only transaction, and return **read-shaped DTOs** —
-no command, no event, no commit. `GET /documents` calls `views.list_documents`
-directly; `commands.ListDocuments` and its handler are **retired**, the trivial proof
-that reads are off the bus.
+a `uow_factory`, open a short read-only transaction, and return a **read model** — no
+command, no event, no commit. `GET /documents` calls `views.list_documents` directly;
+`commands.ListDocuments` and its handler are **retired**, the trivial proof that reads
+are off the bus.
 
-**The DTO is the read contract.** `DocumentView` is separate from the domain
+**The read model is the read contract.** `DocumentView` is separate from the domain
 `Document` (so the read shape can diverge from the aggregate) and from the entrypoints
-`DocumentResponse` (the wire schema stays HTTP-only; the view is application-layer).
-For a list of `id`/`title`/`status` the three shapes still coincide; summaries are
-where the view earns its independence.
+`DocumentResponse` — the actual over-the-wire **DTO**, which stays HTTP-only. The view
+is an in-process read model: it keeps the domain value objects (`DocumentId`,
+`DocumentStatus`) rather than flattening to primitives, since there is no serialization
+boundary until `DocumentResponse.from_view`. For a list of `id`/`title`/`status` the
+three shapes still coincide; summaries are where the view earns its independence.
 
 **Phase the depth.** Adopt *reads-off-the-bus* now — the query still reads through the
 aggregate repository (`uow.documents.find_all`). A **denormalized read model maintained

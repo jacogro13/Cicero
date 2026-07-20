@@ -24,5 +24,5 @@ class DocumentResponse(BaseModel):
 
     @classmethod
     def from_view(cls, view: DocumentView) -> DocumentResponse:
-        """From the read side (ADR-015) — the list endpoint renders read DTOs."""
+        """From the read model (ADR-015) — the list endpoint maps it to the wire DTO."""
         return cls(id=view.id.value, title=view.title, status=view.status)

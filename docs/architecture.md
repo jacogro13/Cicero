@@ -44,8 +44,8 @@ imports the other); the rule is enforced in CI by import-linter.
 
 | Layer | Responsibility | Status |
 |-------|----------------|--------|
-| `domain/` | Entities, value objects, ports, messages, errors — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; messages `Command`/`Event` + `Upload`/`Extract`/`List`/`Delete` commands, `DocumentEvent` base + `DocumentUploaded`/`ExtractionCompleted`/`ExtractionFailed` events; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`, `DocumentExtractor`; `DomainError` hierarchy) |
-| `services/` | Command/event handlers + the message bus that routes them | **Exists** (`MessageBus`; command handlers `UploadDocument`, `ListDocuments`, `DeleteDocument`, `ExtractDocument`; the `AdvanceDocument` event handler on `DocumentUploaded`) |
+| `domain/` | Entities, value objects, ports, messages, errors — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; messages `Command`/`Event` + `Upload`/`Extract`/`Delete` commands, `DocumentEvent` base + `DocumentUploaded`/`ExtractionCompleted`/`ExtractionFailed` events; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`, `DocumentExtractor`; `DomainError` hierarchy) |
+| `services/` | Command/event handlers + the message bus that routes them, and the read-side `views` that bypass it | **Exists** (`MessageBus`; command handlers `UploadDocument`, `DeleteDocument`, `ExtractDocument`; the `AdvanceDocument` event handler on `DocumentUploaded`; `views.list_documents` returning the `DocumentView` read model) |
 | `adapters/` | Implements domain ports against real infra (DB, object storage, extraction, LLM) | **Exists** (`PostgresDocumentRepository`, `SqlAlchemyUnitOfWork`, `S3DocumentStorage`, `PyMuPDFExtractor`; LLM to come) |
 | `entrypoints/` | FastAPI app, routes, schemas, error mapping, the serial job queue, the composition root (settings, engine lifespan, startup provisioning, bus bootstrap) | **Exists** (`GET /health`; `POST`/`GET`/`DELETE /api/documents`; `JobQueue` + the `NEXT_COMMAND` stage table + restart recovery; live wiring over Postgres + S3) |
 
@@ -172,8 +172,8 @@ every accessor, delete included) — and keeps
 processing until the queue empties, so one upload can fan out into a chain of
 reactions. Handlers stay class-based use cases, callable as `(message, uow)`; the
 composition root **bootstraps** them (injecting deps, building the command/event
-maps) and hands the bus to the routes — **all four** (`UploadDocument`,
-`ExtractDocument`, `ListDocuments`, `DeleteDocument`) now ride it.
+maps) and hands the bus to the routes. The bus carries **writes only** — reads
+bypass it (see "Reading: the CQRS read side").
 
 The pipeline is wired as events. New messages reach the queue **only** as events the
 aggregates raise — a handler never synthesises a command, so **commands enter at the
@@ -181,11 +181,24 @@ edge**. Internal reactions are event handlers: **`AdvanceDocument`** subscribes 
 `DocumentUploaded` and puts the document on the job queue, so upload *causes*
 extraction without the route knowing extraction exists — and without the handler
 naming extraction either, since it enqueues a bare id. The command surface is now
-issued from two edges — the routes (`UploadDocument`, `ListDocuments`,
-`DeleteDocument`) and the **job-queue worker** (`ExtractDocument`, see "Background
-jobs"). See **[ADR-011](adr/011-message-bus-commands-and-events.md)**,
+issued from two edges — the routes (`UploadDocument`, `DeleteDocument`) and the
+**job-queue worker** (`ExtractDocument`, see "Background jobs").
+See **[ADR-011](adr/011-message-bus-commands-and-events.md)**,
 **[ADR-012](adr/012-pipeline-as-events.md)**, and
 **[ADR-013](adr/013-serial-job-queue-and-restart-recovery.md)**.
+
+## Reading: the CQRS read side
+
+Reads **bypass the bus** (ADR-015). A **`services/views.py`** query module holds
+functions that take the `uow_factory`, open a short read-only transaction, and return
+a **read model** — `views.list_documents` → `list[DocumentView]`, no command, no
+commit. `GET /api/documents` calls it directly; the old `ListDocuments` command is
+retired. `DocumentView` is a distinct read model, decoupled from both the domain
+`Document` (the write model) and the `DocumentResponse` wire **DTO** — the seam that
+lets the reader experience diverge from the aggregate as it grows. This first phase
+still reads through the aggregate repository; a **denormalized read model maintained by
+event handlers** arrives only where a view's shape genuinely departs from the
+aggregate's. See **[ADR-015](adr/015-cqrs-read-side.md)**.
 
 ## Deleting a document
 
@@ -297,10 +310,11 @@ file upload), `GET /api/documents` (the library list), and
 `DELETE /api/documents/{id}` (→ 204); `/health` stays
 unprefixed. Each route is thin: parse the request, call the use case, map the
 result to a **`DocumentResponse`** (`id`, `title`, `status`) — the wire shape that
-deliberately omits the internal storage keys and extracted text. **Every route goes
+deliberately omits the internal storage keys and extracted text. **Write routes go
 through the message bus**, issuing a command (`commands.UploadDocument` /
-`ListDocuments` / `DeleteDocument`); `bus.handle()` returns the originating command's
-result the route serializes. Domain failures raised by the handlers are turned into
+`DeleteDocument`); `bus.handle()` returns the originating command's result the route
+serializes. The **read route** (`GET`) instead bypasses the bus, calling
+`views.list_documents` off the injected `uow_factory` (ADR-015). Domain failures raised by the handlers are turned into
 responses by the error registry (see "Errors: the domain raises, the entrypoints
 map"). The bus is bootstrapped in `dependencies.py` and injected with `Depends`; the
 leaf infra providers (`uow_factory`, `storage`, `extractor`) are the swap point — wired
@@ -409,13 +423,14 @@ the code on purpose. Implemented so far:
   — no route-level coupling, and no stage named in a handler.
 - The use cases (the `services/` layer): **`UploadDocument`**, over the
   `DocumentStorage` port — stores the source file then persists the document,
-  file-first so a failure can only orphan a blob; **`ListDocuments`**, a read
-  returning every stored document via `DocumentRepository.find_all`; and
-  **`DeleteDocument`**, which removes metadata then the source blob (the mirror of
-  upload's ordering) and raises `DocumentNotFound` for an unknown id — all command
-  handlers reached through the bus. **`ExtractDocument`**, a command handler issued
-  by the job-queue worker, drives `EXTRACTING → EXTRACTED/FAILED`, storing the extracted
-  Markdown at `content_key` (file-first, like upload).
+  file-first so a failure can only orphan a blob; and **`DeleteDocument`**, which
+  removes metadata then the source blob (the mirror of upload's ordering) and raises
+  `DocumentNotFound` for an unknown id — both command handlers reached through the bus.
+  **`ExtractDocument`**, a command handler issued by the job-queue worker, drives
+  `EXTRACTING → EXTRACTED/FAILED`, storing the extracted Markdown at `content_key`
+  (file-first, like upload).
+- The **read side** (`services/views.py`): **`views.list_documents`** returns every
+  stored document as the `DocumentView` read model, bypassing the bus (ADR-015).
 - The **serial job queue** (`entrypoints/`): a `JobQueue` drains `DocumentId` intents
   with bounded concurrency, so extraction (and the summaries/podcast ahead) runs off
   the request path — `AdvanceDocument` enqueues, and the worker derives the command
@@ -450,3 +465,5 @@ references a decision made later.
 - [ADR-011 — Message bus: commands and events through one `bus.handle()`](adr/011-message-bus-commands-and-events.md)
 - [ADR-012 — The pipeline as events](adr/012-pipeline-as-events.md)
 - [ADR-013 — Serial job queue and restart recovery](adr/013-serial-job-queue-and-restart-recovery.md)
+- [ADR-014 — Status-driven pipeline advance](adr/014-status-driven-pipeline-advance.md)
+- [ADR-015 — A CQRS read side: reads bypass the bus](adr/015-cqrs-read-side.md)
