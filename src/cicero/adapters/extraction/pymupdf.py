@@ -10,10 +10,8 @@ from cicero.domain.document.ports.document_extractor import DocumentExtractor
 class PyMuPDFExtractor(DocumentExtractor):
     """`DocumentExtractor` backed by PyMuPDF, in-process (ADR-009).
 
-    ``pymupdf4llm`` renders a PDF to Markdown. The library is synchronous and
-    CPU-bound, so each extraction is offloaded to the anyio worker thread to keep
-    the event loop free (ADR-007). Heading hierarchy from the PDF's TOC is a later
-    slice; this yields flat Markdown.
+    ``pymupdf4llm`` renders a PDF to Markdown; the call is synchronous and CPU-bound,
+    so it is offloaded to an anyio worker thread (ADR-007).
     """
 
     async def extract_markdown(self, data: bytes) -> str:

@@ -1,10 +1,7 @@
 """The composition root: settings → adapters → use cases (ADR-005, ADR-010, ADR-013).
 
-Holds the one process-wide engine, builds the real `UnitOfWork` factory and the
-`S3DocumentStorage` from settings, and provisions the schema + bucket at startup.
-The message bus is assembled once in the lifespan (`app.state.bus`, see `main.py`);
-tests swap it wholesale at the `get_message_bus` seam with a bus wired over fakes,
-so the fast suite needs no infrastructure.
+Owns the process-wide engine and builds the adapters from settings. The bus is
+assembled once in the lifespan; tests swap it at the `get_message_bus` seam.
 """
 
 from __future__ import annotations
@@ -97,13 +94,8 @@ def bootstrap(
 ) -> MessageBus:
     """Wire deps into the handlers and build the command/event maps (ADR-011→016).
 
-    Commands come from the edge: the routes issue upload/delete (reads bypass the bus,
-    ADR-015); the job-queue worker derives its command from the document's status
-    (`pipeline.py`). Each slow stage stays an internal *reaction* — ``AdvanceDocument``
-    handles a stage's completion event by putting the document back on the ``queue`` (an
-    intent, not a command), so upload *causes* extraction which *causes* summarization,
-    with no coupling. A further stage subscribes the same handler to its event and adds
-    a ``NEXT_COMMAND`` entry; nothing here grows a branch.
+    Commands come from the edge; each slow stage's completion event re-enqueues the
+    document via ``AdvanceDocument``, so upload causes extraction causes summarization.
     """
     return MessageBus(
         uow_factory,

@@ -2,11 +2,7 @@ from abc import ABC, abstractmethod
 
 
 class DocumentStorage(ABC):
-    """Port: object storage for a document's files (ADR-004).
-
-    Reached from a use case, never constructed directly; objects are addressed
-    by key (a document derives its own via :attr:`Document.source_key`).
-    """
+    """Port: object storage for a document's files, addressed by key (ADR-004)."""
 
     @abstractmethod
     async def put(self, key: str, data: bytes) -> None:

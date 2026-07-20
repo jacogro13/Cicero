@@ -1,8 +1,6 @@
 """Process configuration, read from the environment (ADR-010).
 
-12-factor settings: required infra coordinates, defaulted bucket/region. No secrets
-live in code — ``.env.example`` carries placeholders. ``get_settings`` is cached so
-the environment is read once per process.
+12-factor settings; ``get_settings`` is cached so the environment is read once.
 """
 
 from __future__ import annotations

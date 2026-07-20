@@ -5,13 +5,11 @@ from cicero.domain.document.document_id import DocumentId
 
 
 class DocumentRepository(ABC):
-    """Port: the collection of ``Document`` aggregates (ADR-003).
+    """Port: the collection of ``Document`` aggregates, reached through ``uow.documents``
+    (ADR-003).
 
-    Reached through a :class:`UnitOfWork` (``uow.documents``), never constructed
-    directly. The port itself records every aggregate that passes through an
-    accessor in ``seen`` — the UoW drains their events after a commit (ADR-011)
-    — so implementations supply pure persistence via the ``_``-prefixed hooks
-    and cannot skip the bookkeeping.
+    Records every aggregate touched in ``seen`` for event draining (ADR-011);
+    implementations supply persistence via the ``_``-prefixed hooks.
     """
 
     def __init__(self) -> None:

@@ -14,15 +14,9 @@ JobConsumer = Callable[[DocumentId], Awaitable[None]]
 class JobQueue:
     """Process-wide serial queue for slow background jobs (ADR-013).
 
-    Extraction is in-process and memory-heavy (later summaries and the podcast even
-    more so), so a batch upload must not run every job at once. Workers drain the
-    queue with a fixed ``concurrency`` (default 1 → one document at a time), bounding
-    how many heavy jobs are ever in flight however fast they are enqueued.
-
-    Created per event loop (in the lifespan, or a test fixture) and held on
-    ``app.state`` — never a module global — so its ``asyncio.Queue`` never leaks
-    across loops. Each entry is a ``DocumentId`` intent; the ``consumer`` passed to
-    :meth:`start` (wired at the composition root) turns it into a command at the edge.
+    Workers drain it at a fixed ``concurrency`` (default 1), bounding how many heavy
+    jobs run at once. Created per event loop and held on ``app.state``, never a module
+    global. Each entry is a ``DocumentId`` intent the ``consumer`` turns into a command.
     """
 
     def __init__(self, concurrency: int = 1) -> None:

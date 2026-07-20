@@ -11,9 +11,7 @@ from cicero.domain.document.ports.document_repository import DocumentRepository
 class PostgresDocumentRepository(DocumentRepository):
     """``DocumentRepository`` over a SQLAlchemy ``AsyncSession`` (ADR-006).
 
-    Reached through ``uow.documents``; the owning UoW controls commit/rollback.
-    ``save`` adds to the session identity map (insert / tracked update); flushing
-    and committing belong to the UoW.
+    ``save`` adds to the session identity map; the owning UoW flushes and commits.
     """
 
     def __init__(self, session: AsyncSession) -> None:

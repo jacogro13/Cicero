@@ -13,10 +13,9 @@ from cicero.domain.messages import Event
 class UnitOfWork(ABC):
     """Port: the transaction boundary (ADR-003).
 
-    An async context manager exposing the aggregate repositories and read-model
-    stores a transaction spans (``uow.documents``, ``uow.summaries``, …), so one
-    block commits across all of them atomically. Commit is explicit; any other exit
-    rolls back. Only aggregate repositories are event sources (``collect_new_events``).
+    An async context manager exposing the repositories and read-model stores a
+    transaction spans (``uow.documents``, ``uow.summaries``). Commit is explicit;
+    any other exit rolls back.
     """
 
     documents: DocumentRepository
@@ -46,8 +45,5 @@ class UnitOfWork(ABC):
 
 
 UnitOfWorkFactory = Callable[[], UnitOfWork]
-"""Zero-arg callable returning a fresh, *unentered* :class:`UnitOfWork`.
-
-Services take the factory (not an instance) so one use case can open several
-sequential transactions.
-"""
+"""Zero-arg callable returning a fresh, unentered :class:`UnitOfWork`, so one use
+case can open several sequential transactions."""

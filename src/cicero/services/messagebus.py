@@ -1,8 +1,7 @@
 """The message bus: one entry point for commands and events (ADR-011).
 
-A command is routed to exactly one handler; an event to zero or more. After each
-handler the bus drains the Unit of Work's new events and keeps processing until
-the queue empties, so handling one message can cause a chain of reactions.
+A command routes to one handler, an event to zero or more; the bus then drains
+the UoW's new events until the queue empties.
 """
 
 from __future__ import annotations
@@ -30,10 +29,8 @@ class MessageBus:
         self._event_handlers = event_handlers
 
     async def handle(self, message: Message) -> Any:
-        """Process a message and every event it transitively raises. Returns the
-        originating command's result so a caller can echo the affected resource;
-        results of cascaded commands stay internal (ADR-011). New messages reach the
-        queue only as events the aggregates raise — commands enter at the edge (ADR-012)."""
+        """Process a message and every event it transitively raises, returning the
+        originating command's result (ADR-011/012)."""
         uow = self._uow_factory()
         queue: deque[Message] = deque([message])
         result: Any = None

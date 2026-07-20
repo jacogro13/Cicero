@@ -1,8 +1,5 @@
-"""SQLAlchemy mapping for the Document aggregate (ADR-006).
-
-Imperative mapping keeps the domain free of ORM imports (ADR-001): the table and
-the value-object ↔ column translations live here, and ``start_mappers`` wires them
-onto the plain ``Document`` class. A fetch returns a real ``Document``.
+"""SQLAlchemy imperative mapping for the Document aggregate, keeping the domain free
+of ORM imports (ADR-001, ADR-006).
 """
 
 from __future__ import annotations
@@ -55,8 +52,7 @@ _mappers_started = False
 
 
 def start_mappers() -> None:
-    """Map ``Document`` onto its table (imperative mapping). Idempotent, so the
-    composition root may call it once at startup and tests once per fixture."""
+    """Map ``Document`` onto its table. Idempotent."""
     global _mappers_started
     if _mappers_started:
         return

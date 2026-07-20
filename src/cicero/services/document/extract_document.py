@@ -13,10 +13,8 @@ logger = logging.getLogger(__name__)
 
 
 class ExtractDocument:
-    """Handler for the ``ExtractDocument`` command: extract the source to Markdown,
-    driving EXTRACTING→EXTRACTED/FAILED (ADR-009). The job-queue worker issues the command
-    off the request path (ADR-013); storage-first (ADR-004). Raises ``DocumentNotFound``
-    for an unknown id.
+    """Handler for ``ExtractDocument``: extract the source to Markdown, driving
+    EXTRACTING→EXTRACTED/FAILED (ADR-009). Raises ``DocumentNotFound`` for an unknown id.
     """
 
     def __init__(self, storage: DocumentStorage, extractor: DocumentExtractor) -> None:

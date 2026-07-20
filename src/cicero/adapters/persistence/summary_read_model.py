@@ -12,9 +12,7 @@ from cicero.domain.document.ports.summary_read_model import SummaryReadModel
 class PostgresSummaryReadModel(SummaryReadModel):
     """``SummaryReadModel`` over a SQLAlchemy ``AsyncSession`` (ADR-016).
 
-    A read model, so it uses Core statements over the ``summaries`` table rather than
-    the aggregate mapping. Reached through ``uow.summaries`` and written in the
-    summarisation transaction; the owning UoW controls commit/rollback.
+    Uses Core statements over the ``summaries`` table, not the aggregate mapping.
     """
 
     def __init__(self, session: AsyncSession) -> None:

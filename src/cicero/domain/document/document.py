@@ -15,14 +15,10 @@ from cicero.domain.messages import Event
 
 @dataclass
 class Document:
-    """A library document.
+    """A library document aggregate.
 
-    Construct via :meth:`create` so the id is generated and the title is
-    validated; do not instantiate directly. Status changes go through the
-    ``mark_*`` methods rather than assigning :attr:`status` directly (ADR-002);
-    each names the pipeline stage it completes (ADR-014).
-    The aggregate records domain events off its lifecycle (ADR-011); the
-    Unit of Work drains them after a commit.
+    Build via :meth:`create`; change status through the ``mark_*`` methods
+    (ADR-002/014). Records domain events the UoW drains after commit (ADR-011).
     """
 
     id: DocumentId
@@ -31,8 +27,7 @@ class Document:
 
     @property
     def events(self) -> list[Event]:
-        """Pending domain events. Lazily created so ORM-loaded instances (built
-        without ``__init__``) work; not a field, so it stays out of equality."""
+        """Pending domain events; lazy so ORM-loaded instances work and equality ignores them."""
         if not hasattr(self, "_events"):
             self._events: list[Event] = []
         return self._events

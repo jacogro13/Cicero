@@ -15,9 +15,7 @@ _BUCKET_EXISTS = {"BucketAlreadyOwnedByYou", "BucketAlreadyExists"}
 class S3DocumentStorage(DocumentStorage):
     """`DocumentStorage` over any S3-compatible store — Garage/MinIO/AWS (ADR-007).
 
-    boto3 is synchronous, so every call is offloaded to the anyio worker thread to
-    keep the event loop free. The bucket is assumed to exist (provisioned by the
-    composition root / compose init), as the Postgres adapter assumes its schema does.
+    boto3 is synchronous, so every call is offloaded to an anyio worker thread.
     """
 
     def __init__(
@@ -39,8 +37,7 @@ class S3DocumentStorage(DocumentStorage):
         )
 
     async def ensure_bucket(self) -> None:
-        """Create the bucket if absent — idempotent composition-root provisioning
-        (ADR-010), separate from the data path below, which assumes it exists."""
+        """Create the bucket if absent — idempotent startup provisioning (ADR-010)."""
         await anyio.to_thread.run_sync(self._ensure_bucket_sync)
 
     def _ensure_bucket_sync(self) -> None:

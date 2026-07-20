@@ -1,9 +1,4 @@
-"""SQLAlchemy engine, session factory, and schema provisioning (ADR-006, ADR-010).
-
-The composition root owns one engine per process. ``create_schema`` is the
-turnkey-startup alternative to migrations: idempotent ``create_all`` while this app
-solely owns the schema (Alembic deferred — ADR-010).
-"""
+"""SQLAlchemy engine, session factory, and schema provisioning (ADR-006, ADR-010)."""
 
 from __future__ import annotations
 

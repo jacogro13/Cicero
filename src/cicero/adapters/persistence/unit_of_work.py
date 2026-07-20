@@ -13,9 +13,8 @@ from cicero.domain.ports.unit_of_work import UnitOfWork, UnitOfWorkFactory
 class SqlAlchemyUnitOfWork(UnitOfWork):
     """``UnitOfWork`` over a SQLAlchemy ``AsyncSession`` (ADR-006).
 
-    One ``async with`` block is one session/transaction spanning the document
-    repository and the summaries read model. Commit is explicit; any other exit
-    rolls back (ADR-003).
+    One ``async with`` block is one session/transaction; commit is explicit,
+    any other exit rolls back (ADR-003).
     """
 
     documents: PostgresDocumentRepository

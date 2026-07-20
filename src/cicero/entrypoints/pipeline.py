@@ -1,10 +1,7 @@
 """Status-driven pipeline advance: the edge decides what an intent means (ADR-014).
 
-The job queue carries bare document ids. This module holds the one table mapping a
-document's **persisted status** to the command that advances it, and the consumer that
-reads the status back and dispatches. Keeping both here means the pipeline's order is
-written down in exactly one place, and commands are still born only in ``entrypoints``
-(ADR-012) — a handler names a stage nowhere.
+Holds the one table mapping a document's persisted status to the command that
+advances it, plus the consumer that reads the status back and dispatches (ADR-012).
 """
 
 from __future__ import annotations
@@ -21,12 +18,9 @@ from cicero.services.messagebus import MessageBus
 
 logger = logging.getLogger(__name__)
 
-# The pipeline, as a table. ``None`` means the document is done — the intent is
-# dropped. Total over ``DocumentStatus`` on purpose: a new status without a decision
-# here is a document that would stall silently, so the omission fails a test instead.
-# An in-flight status (``EXTRACTING``/``SUMMARISING``) maps to the same command as the
-# stage that precedes it, because a stage interrupted mid-flight is simply re-run
-# (``mark_*`` is unguarded, ADR-002). A new stage costs one entry here (ADR-014/016).
+# The pipeline, as a table. ``None`` means done (intent dropped). Total over
+# ``DocumentStatus`` on purpose, so a new status without a decision fails a test.
+# An in-flight status re-runs its stage (``mark_*`` is unguarded, ADR-002).
 NEXT_COMMAND: dict[DocumentStatus, type[Command] | None] = {
     DocumentStatus.UPLOADED: commands.ExtractDocument,
     DocumentStatus.EXTRACTING: commands.ExtractDocument,
@@ -44,14 +38,13 @@ def next_command(status: DocumentStatus, document_id: DocumentId) -> Command | N
 
 
 def has_next_stage(status: DocumentStatus) -> bool:
-    """Whether the pipeline still owes this document work — the question restart
-    recovery asks, so recovery and dispatch share one definition of 'unfinished'."""
+    """Whether the pipeline still owes this document work (shared by dispatch and recovery)."""
     return NEXT_COMMAND[status] is not None
 
 
 def make_pipeline_consumer(bus: MessageBus, uow_factory: UnitOfWorkFactory) -> JobConsumer:
-    """The queue worker's job: read the document's status and dispatch the command that
-    status calls for. Commands are born here, at the edge (ADR-013/014)."""
+    """The queue worker's job: read the document's status and dispatch its command
+    (ADR-013/014)."""
 
     async def consume(document_id: DocumentId) -> None:
         async with uow_factory() as uow:

@@ -18,10 +18,8 @@ from cicero.entrypoints.settings import get_settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Provision the schema + bucket the adapters assume (ADR-010), then build the
-    # process-wide bus and job queue (ADR-013): the worker drains processing off the
-    # request path, deriving each command from the document's status (ADR-014), and
-    # any document a restart left unfinished is re-enqueued through that same path.
+    # Provision schema + bucket (ADR-010), build the process-wide bus and job queue
+    # (ADR-013), then re-enqueue any document a restart left unfinished (ADR-014).
     # Not entered by the fast suite's plain TestClient.
     await provision_infrastructure()
     uow_factory = get_uow_factory()

@@ -14,11 +14,8 @@ async def reconcile_unfinished_documents(
 ) -> int:
     """Re-enqueue every document the pipeline still owes work, after a restart (ADR-014).
 
-    The in-process queue loses whatever it held on a crash or restart. Work is
-    reconstructed purely from persisted status — no jobs table — and by asking
-    ``has_next_stage`` this is the *same* question ordinary dispatch asks, so recovery
-    is no longer a special case: it re-runs an interrupted stage and also picks up a
-    document whose enqueue never happened. Returns the count enqueued.
+    Work is reconstructed purely from persisted status via ``has_next_stage`` — the
+    same question dispatch asks — so recovery is not a special case. Returns the count.
     """
     async with uow_factory() as uow:
         documents = await uow.documents.find_all()

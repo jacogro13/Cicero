@@ -11,11 +11,9 @@ logger = logging.getLogger(__name__)
 
 
 class SummariseDocument:
-    """Handler for the ``SummariseDocument`` command: summarise the extracted text and
-    persist it as a read model, driving SUMMARISING→SUMMARISED/FAILED (ADR-016). The
-    job-queue worker issues the command off the request path (ADR-013). The summary is
-    written in the *same* transaction as ``mark_summarised``, so SUMMARISED ⇔ the
-    summary is readable. Raises ``DocumentNotFound`` for an unknown id.
+    """Handler for ``SummariseDocument``: summarise the extracted text and persist it
+    as a read model, driving SUMMARISING→SUMMARISED/FAILED (ADR-016). The summary is
+    written in the same transaction as ``mark_summarised``. Raises ``DocumentNotFound``.
     """
 
     def __init__(self, storage: DocumentStorage, summarizer: DocumentSummarizer) -> None:

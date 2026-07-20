@@ -10,8 +10,7 @@ from cicero.services.views import DocumentView, SummaryView
 
 
 class DocumentResponse(BaseModel):
-    """Wire shape of a document (ADR-005): identity, title, status only. Storage
-    keys and the internal extracted text never cross the API boundary."""
+    """Wire shape of a document (ADR-005): identity, title, status only."""
 
     id: uuid.UUID
     title: str
