@@ -1,4 +1,5 @@
-.PHONY: sync lint test integration dev up down
+.PHONY: sync lint test integration dev up down \
+        fe-install fe-dev fe-lint fe-test fe-build
 
 sync:                 ## Install dependencies into the uv venv
 	uv sync
@@ -20,3 +21,18 @@ down:                 ## Stop the stack and remove its volumes
 
 dev:                  ## Run the app on the host (needs Postgres + MinIO; see .env.example)
 	uv run uvicorn cicero.entrypoints.main:app --reload
+
+fe-install:           ## Install the admin SPA's node dependencies (frontend/)
+	cd frontend && npm install
+
+fe-dev:               ## Run the admin SPA dev server (proxies /api to the host api on :8000)
+	cd frontend && npm run dev
+
+fe-lint:              ## Lint + typecheck the admin SPA
+	cd frontend && npm run lint && npm run typecheck
+
+fe-test:              ## Run the admin SPA tests (Vitest)
+	cd frontend && npm run test
+
+fe-build:             ## Build the admin SPA production bundle
+	cd frontend && npm run build

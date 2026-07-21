@@ -64,3 +64,14 @@ services:
     ports:
       - "${API_HOST_PORT:-8000}:8000"
     networks: [cicero]
+
+  # The admin SPA (ADR-017): nginx serves the built bundle and reverse-proxies
+  # /api to the api, so the browser only ever makes same-origin calls. Open the
+  # app at http://localhost:${WEB_HOST_PORT:-5173}.
+  web:
+    build: ./frontend
+    depends_on:
+      - api
+    ports:
+      - "${WEB_HOST_PORT:-5173}:80"
+    networks: [cicero]
