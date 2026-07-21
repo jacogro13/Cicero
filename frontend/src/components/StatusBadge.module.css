@@ -1,0 +1,66 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* Queued / neutral */
+.badge[data-status="UPLOADED"] {
+  color: #475569;
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
+/* Working */
+.badge[data-status="EXTRACTING"],
+.badge[data-status="SUMMARISING"] {
+  color: #b45309;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+/* Intermediate done */
+.badge[data-status="EXTRACTED"] {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+/* Terminal success */
+.badge[data-status="SUMMARISED"] {
+  color: #047857;
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+}
+
+/* Terminal failure */
+.badge[data-status="FAILED"] {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+}

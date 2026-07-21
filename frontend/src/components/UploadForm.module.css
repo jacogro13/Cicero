@@ -1,0 +1,72 @@
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+  padding: 1.25rem;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.field:first-of-type {
+  flex: 1 1 16rem;
+}
+
+.label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b7280;
+}
+
+.input,
+.file {
+  font: inherit;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.input:focus,
+.file:focus {
+  outline: 2px solid #c7d2fe;
+  border-color: #6366f1;
+}
+
+.submit {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.55rem 1.25rem;
+  border: none;
+  border-radius: 8px;
+  background: #4f46e5;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.submit:hover:not(:disabled) {
+  background: #4338ca;
+}
+
+.submit:disabled {
+  background: #c7d2fe;
+  cursor: not-allowed;
+}
+
+.error {
+  flex-basis: 100%;
+  margin: 0;
+  color: #b91c1c;
+  font-size: 0.85rem;
+}
