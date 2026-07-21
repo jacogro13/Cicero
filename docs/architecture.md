@@ -506,3 +506,4 @@ references a decision made later.
 - [ADR-014 — Status-driven pipeline advance](adr/014-status-driven-pipeline-advance.md)
 - [ADR-015 — A CQRS read side: reads bypass the bus](adr/015-cqrs-read-side.md)
 - [ADR-016 — AI summaries: a pipeline stage and its read model](adr/016-ai-summaries-and-the-summary-read-model.md)
+- [ADR-017 — The admin SPA: first frontend and its serving topology](adr/017-admin-spa-first-frontend-and-serving-topology.md)
