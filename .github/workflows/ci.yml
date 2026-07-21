@@ -59,3 +59,15 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  images:
+    name: Docker images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build the api and web images (no push) so a broken Dockerfile, nginx
+      # config, or compose build context fails the PR rather than `docker
+      # compose up`. db/minio use published images and are not built here.
+      - name: Build the api and web images
+        run: docker compose build
