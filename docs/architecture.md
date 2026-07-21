@@ -335,7 +335,8 @@ See **[ADR-008](adr/008-domain-exceptions-and-http-error-mapping.md)**.
 
 The `entrypoints/` layer puts the use cases on the wire. Routes live in an
 `APIRouter` mounted under `/api` — `POST /api/documents` (a `multipart` `title` +
-file upload), `GET /api/documents` (the library list), and
+file upload), `GET /api/documents` (the library list),
+`GET /api/documents/{id}/summary` (the read experience, 404 until summarised), and
 `DELETE /api/documents/{id}` (→ 204); `/health` stays
 unprefixed. Each route is thin: parse the request, call the use case, map the
 result to a **`DocumentResponse`** (`id`, `title`, `status`) — the wire shape that
@@ -401,6 +402,39 @@ sequenceDiagram
     L->>D: dispose_engine() on shutdown
 ```
 
+## The admin SPA: the first frontend
+
+The first user-facing surface is an **admin SPA** — upload a document, watch it move
+`UPLOADED → … → SUMMARISED`, list, delete, and read the result. It lives in a separate
+**`frontend/` tree, outside the hexagon**: React + TypeScript built by Vite, tested
+with Vitest + Testing Library, styled with CSS Modules. import-linter governs the
+Python layers only; the frontend carries its own toolchain and its own CI node job.
+
+It talks to the backend over **same-origin `/api`**, never a cross-origin call. In
+development the Vite dev server proxies `/api` to the api on `:8000`; in production a
+dedicated **`web` (nginx) compose service** serves the built bundle and reverse-proxies
+`/api` to the api — so the api image stays decoupled from the frontend build and no
+CORS config is needed. `docker compose up` now brings the UI up with the stack.
+
+```mermaid
+flowchart LR
+    B["Browser<br/>admin SPA"]
+    W["web (nginx)<br/>serves dist · proxies /api"]
+    A["api (FastAPI)"]
+    B -->|same-origin /api| W
+    W -->|/api| A
+```
+
+**Server state runs through TanStack Query.** The document list is a polled query — it
+refetches while any document is still non-terminal and goes idle once every document is
+`SUMMARISED`/`FAILED`, the client-side stand-in for the still-deferred push channel.
+Upload and delete are mutations that invalidate the list, so a new document appears and
+starts polling (and a deleted one drops) with no manual refetching; the summary is read
+on demand from `GET /api/documents/{id}/summary`. Testing is **pragmatic** — component
+tests drive the flows (render, upload, list-refresh, delete, view summary) against a
+mocked client, no backend-style red→green ceremony. See
+**[ADR-017](adr/017-admin-spa-first-frontend-and-serving-topology.md)**.
+
 ## Planned capabilities
 
 Each of these is a committed direction; its design decision is recorded in an ADR
@@ -416,8 +450,9 @@ when the slice is built test-first (so the ADR reflects real, validated code):
   generated podcast (script + audio). Mock adapters by default (self-contained); any
   OpenAI-compatible endpoint pluggable (optional Ollama compose profile).
   _ADRs to follow with those slices._
-- **Frontends** — an admin SPA (upload/delete/trigger jobs) and a reader SPA
-  (read/notes/chat). _ADRs to follow._
+- **Reader SPA** — the daily-use reading surface (read summaries, TOC navigation,
+  notes, chat), grown as the thin frontend tail of each read-shaped slice. The admin
+  SPA already exists (see "The admin SPA: the first frontend"). _ADRs to follow._
 
 ## What exists today
 
@@ -482,6 +517,13 @@ the code on purpose. Implemented so far:
   starts the job queue at startup — so `docker compose up` (api + Postgres + MinIO)
   runs the app end to end, proven by an integration test driving the live stack with
   no `dependency_overrides`.
+- The **admin SPA** (the `frontend/` tree): React + TypeScript on Vite, served in
+  production by an nginx **`web`** compose service that also reverse-proxies same-origin
+  `/api` (a Vite proxy mirrors it in development). It uploads, lists — polling the
+  pipeline through TanStack Query until every document is terminal — deletes, and reads
+  a document's summary, consuming the read side over `/api`. Component-tested against a
+  mocked client (Vitest); a CI node job runs its lint / typecheck / tests / build, and a
+  CI image-build job builds the api + web images on every PR.
 
 Everything under **Planned** above is direction, not code, yet.
 
