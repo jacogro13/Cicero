@@ -24,9 +24,10 @@ OpenAI-compatible `/chat/completions` endpoint over `httpx`: a system + user
 message (the extracted Markdown), returning `choices[0].message.content`. A
 `Bearer` header is sent only when an API key is configured, so key-less local
 endpoints (Ollama, vLLM) work unchanged. One `AsyncClient` per call — summaries
-are infrequent (one per document); a 60s timeout; `raise_for_status()` so a bad
-response surfaces as the existing `FAILED` terminal (the stage already swallows
-summarizer errors).
+are infrequent (one per document); a configurable timeout (default 60s, raised for
+a slow local model — the call is non-streaming, so it must cover the whole
+generation); `raise_for_status()` so a bad response surfaces as the existing
+`FAILED` terminal (the stage already swallows summarizer errors).
 
 **Config-selected in the composition root** — `LLM_BASE_URL` set →
 `OpenAISummarizer`; unset → `MockSummarizer` stays the zero-config default. New

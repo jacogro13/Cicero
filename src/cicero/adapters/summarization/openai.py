@@ -5,7 +5,6 @@ import httpx
 from cicero.domain.document.ports.document_summarizer import DocumentSummarizer
 
 _SYSTEM_PROMPT = "Summarise the following document concisely and faithfully."
-_TIMEOUT = httpx.Timeout(60.0)
 
 
 class OpenAISummarizer(DocumentSummarizer):
@@ -22,11 +21,13 @@ class OpenAISummarizer(DocumentSummarizer):
         base_url: str,
         model: str,
         api_key: str | None = None,
+        timeout: float = 60.0,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._url = base_url.rstrip("/") + "/chat/completions"
         self._model = model
         self._api_key = api_key
+        self._timeout = httpx.Timeout(timeout)
         self._transport = transport
 
     async def summarize(self, markdown: str) -> str:
@@ -38,7 +39,7 @@ class OpenAISummarizer(DocumentSummarizer):
             ],
         }
         headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
-        async with httpx.AsyncClient(timeout=_TIMEOUT, transport=self._transport) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
             response = await client.post(self._url, json=payload, headers=headers)
             response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]

@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     llm_base_url: str | None = None
     llm_api_key: str | None = None
     llm_model: str = "gpt-4o-mini"
+    # Seconds to await a completion — non-streaming, so it must cover the whole
+    # generation; a slow local model needs far more than a hosted one.
+    llm_timeout: float = 60.0
 
 
 @lru_cache
