@@ -2,12 +2,17 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, Response, UploadFile
 
 from cicero.domain.document import commands
 from cicero.domain.document.document_id import DocumentId
+from cicero.domain.document.ports.document_storage import DocumentStorage
 from cicero.domain.ports.unit_of_work import UnitOfWorkFactory
-from cicero.entrypoints.dependencies import get_message_bus, get_uow_factory
+from cicero.entrypoints.dependencies import (
+    get_document_storage,
+    get_message_bus,
+    get_uow_factory,
+)
 from cicero.entrypoints.schemas import DocumentResponse, SummaryResponse
 from cicero.services import views
 from cicero.services.messagebus import MessageBus
@@ -43,6 +48,34 @@ async def get_document_summary(
     if summary is None:
         raise HTTPException(status_code=404, detail="summary not found")
     return SummaryResponse.from_view(summary)
+
+
+@router.get("/{document_id}/content")
+async def get_document_content(
+    document_id: UUID,
+    uow_factory: UnitOfWorkFactory = Depends(get_uow_factory),
+    storage: DocumentStorage = Depends(get_document_storage),
+) -> Response:
+    """Admin inspection: the extracted Markdown, 404 until EXTRACTED (ADR-019)."""
+    markdown = await views.get_document_content(
+        uow_factory, storage, DocumentId(document_id)
+    )
+    if markdown is None:
+        raise HTTPException(status_code=404, detail="content not available")
+    return Response(content=markdown, media_type="text/markdown")
+
+
+@router.get("/{document_id}/file")
+async def get_document_file(
+    document_id: UUID,
+    uow_factory: UnitOfWorkFactory = Depends(get_uow_factory),
+    storage: DocumentStorage = Depends(get_document_storage),
+) -> Response:
+    """Admin inspection: the original PDF, streamed from storage (ADR-019)."""
+    content = await views.get_document_file(
+        uow_factory, storage, DocumentId(document_id)
+    )
+    return Response(content=content, media_type="application/pdf")
 
 
 @router.delete("/{document_id}", status_code=204)

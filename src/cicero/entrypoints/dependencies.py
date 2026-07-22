@@ -78,6 +78,12 @@ def get_uow_factory() -> UnitOfWorkFactory:
     return make_sqlalchemy_uow_factory(_get_session_factory())
 
 
+def get_document_storage() -> DocumentStorage:
+    """Read-side seam: the storage port the content/file views read blobs through
+    (ADR-019). Writes reach storage through the bus; these reads bypass it."""
+    return _make_storage(get_settings())
+
+
 def get_document_extractor() -> DocumentExtractor:
     return PyMuPDFExtractor()
 
