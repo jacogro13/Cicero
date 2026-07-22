@@ -18,6 +18,7 @@ from cicero.adapters.persistence.engine import (
 from cicero.adapters.persistence.unit_of_work import make_sqlalchemy_uow_factory
 from cicero.adapters.storage.s3 import S3DocumentStorage
 from cicero.adapters.summarization.mock import MockSummarizer
+from cicero.adapters.summarization.openai import OpenAISummarizer
 from cicero.domain.document import commands
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.events import DocumentUploaded, ExtractionCompleted
@@ -82,6 +83,18 @@ def get_document_extractor() -> DocumentExtractor:
 
 
 def get_document_summarizer() -> DocumentSummarizer:
+    return make_summarizer(get_settings())
+
+
+def make_summarizer(settings: Settings) -> DocumentSummarizer:
+    """Select the summarizer from config: an OpenAI-compatible endpoint when
+    ``LLM_BASE_URL`` is set, else the zero-config mock (ADR-016, ADR-018)."""
+    if settings.llm_base_url:
+        return OpenAISummarizer(
+            base_url=settings.llm_base_url,
+            model=settings.llm_model,
+            api_key=settings.llm_api_key,
+        )
     return MockSummarizer()
 
 

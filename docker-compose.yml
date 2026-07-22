@@ -61,6 +61,10 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-cicero-secret}
       S3_BUCKET: ${S3_BUCKET:-documents}
       S3_REGION: ${S3_REGION:-us-east-1}
+      # Optional: unset LLM_BASE_URL → the zero-config mock summarizer.
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
     ports:
       - "${API_HOST_PORT:-8000}:8000"
     networks: [cicero]

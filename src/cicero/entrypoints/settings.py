@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     s3_region: str = "us-east-1"
     job_queue_concurrency: int = 1
 
+    # Summarization LLM. Unset ``llm_base_url`` → the zero-config mock summarizer;
+    # set it to any OpenAI-compatible endpoint (incl. the /v1) for a real model.
+    llm_base_url: str | None = None
+    llm_api_key: str | None = None
+    llm_model: str = "gpt-4o-mini"
+
 
 @lru_cache
 def get_settings() -> Settings:
