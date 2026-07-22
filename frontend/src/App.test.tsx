@@ -102,4 +102,25 @@ describe("App", () => {
     expect(await screen.findByText("A hero sails home.")).toBeInTheDocument();
     expect(mockedApi.getSummary).toHaveBeenCalledWith("1");
   });
+
+  it("renders the summary Markdown as formatted elements, not raw text", async () => {
+    const user = userEvent.setup();
+    mockedApi.listDocuments.mockResolvedValue([
+      { id: "1", title: "The Odyssey", status: "SUMMARISED" },
+    ]);
+    mockedApi.getSummary.mockResolvedValue({
+      text: "## Themes\n\n- **Homecoming** and cunning.",
+    });
+
+    renderWithClient(<App />);
+    await screen.findByText("The Odyssey");
+    await user.click(screen.getByRole("button", { name: "View summary" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Themes" }),
+    ).toBeInTheDocument();
+    // The bold marker is rendered, not shown literally.
+    expect(screen.getByText("Homecoming").tagName).toBe("STRONG");
+    expect(screen.queryByText(/\*\*Homecoming\*\*/)).not.toBeInTheDocument();
+  });
 });

@@ -46,11 +46,95 @@
   color: #111827;
 }
 
-.text {
-  margin: 0;
-  white-space: pre-wrap;
+/* Styling for the rendered Markdown summary. Scoped selectors keep it to the
+   panel, since react-markdown emits plain semantic tags. */
+.markdown {
   line-height: 1.6;
   color: #374151;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  margin: 1.2em 0 0.5em;
+  line-height: 1.3;
+  color: #111827;
+}
+
+.markdown h1 {
+  font-size: 1.3rem;
+}
+
+.markdown h2 {
+  font-size: 1.15rem;
+}
+
+.markdown h3 {
+  font-size: 1.02rem;
+}
+
+.markdown p {
+  margin: 0.6em 0;
+}
+
+.markdown ul,
+.markdown ol {
+  margin: 0.6em 0;
+  padding-left: 1.4em;
+}
+
+.markdown li {
+  margin: 0.25em 0;
+}
+
+.markdown a {
+  color: #2563eb;
+}
+
+.markdown code {
+  padding: 0.1em 0.35em;
+  background: #f1f5f9;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.markdown pre {
+  padding: 0.8em 1em;
+  overflow-x: auto;
+  background: #f1f5f9;
+  border-radius: 8px;
+}
+
+.markdown pre code {
+  padding: 0;
+  background: none;
+}
+
+.markdown blockquote {
+  margin: 0.6em 0;
+  padding-left: 1em;
+  border-left: 3px solid #e2e8f0;
+  color: #6b7280;
+}
+
+.markdown table {
+  border-collapse: collapse;
+  margin: 0.6em 0;
+}
+
+.markdown th,
+.markdown td {
+  padding: 0.4em 0.7em;
+  border: 1px solid #e2e8f0;
+  text-align: left;
 }
 
 .muted {
