@@ -13,7 +13,9 @@ Cicero extracts their text and uses it as raw material to generate concise
 summaries — per chapter for a book, or a single summary for an article — and
 those summaries are what you read in the app (or chat with the document about;
 articles can also be turned into a podcast). The extracted text itself is never
-displayed; to read a source in full you open the original PDF or link. It runs
+displayed to readers; to read a source in full you open the original PDF or link
+(an operator can inspect the extracted text in the admin console, to verify
+extraction). It runs
 end to end from `docker compose up` with no external services: the database and
 object storage are local containers, and the AI features use mock adapters
 unless a real OpenAI-compatible endpoint is configured.
@@ -339,15 +341,22 @@ See **[ADR-008](adr/008-domain-exceptions-and-http-error-mapping.md)**.
 The `entrypoints/` layer puts the use cases on the wire. Routes live in an
 `APIRouter` mounted under `/api` — `POST /api/documents` (a `multipart` `title` +
 file upload), `GET /api/documents` (the library list),
-`GET /api/documents/{id}/summary` (the read experience, 404 until summarised), and
+`GET /api/documents/{id}/summary` (the read experience, 404 until summarised),
+`GET /api/documents/{id}/content` (admin inspection: the extracted Markdown as
+`text/markdown`, 404 until EXTRACTED) and `GET /api/documents/{id}/file` (the
+original PDF as `application/pdf`), and
 `DELETE /api/documents/{id}` (→ 204); `/health` stays
 unprefixed. Each route is thin: parse the request, call the use case, map the
 result to a **`DocumentResponse`** (`id`, `title`, `status`) — the wire shape that
 deliberately omits the internal storage keys and extracted text. **Write routes go
 through the message bus**, issuing a command (`commands.UploadDocument` /
 `DeleteDocument`); `bus.handle()` returns the originating command's result the route
-serializes. The **read route** (`GET`) instead bypasses the bus, calling
-`views.list_documents` off the injected `uow_factory` (ADR-015). Domain failures raised by the handlers are turned into
+serializes. The **read routes** (`GET`) instead bypass the bus, calling a `views.*`
+query off the injected `uow_factory` (ADR-015). Most read a Postgres projection
+(the list, the summary); the **content/file viewers** instead read a **blob** off
+the `DocumentStorage` port at the document's `content_key`/`source_key` and stream
+it with an honest content-type — so the read side injects `storage` too (ADR-019).
+Domain failures raised by the handlers are turned into
 responses by the error registry (see "Errors: the domain raises, the entrypoints
 map"). The bus is bootstrapped in `dependencies.py` and injected with `Depends`; the
 leaf infra providers (`uow_factory`, `storage`, `extractor`) are the swap point — wired
@@ -552,3 +561,5 @@ references a decision made later.
 - [ADR-015 — A CQRS read side: reads bypass the bus](adr/015-cqrs-read-side.md)
 - [ADR-016 — AI summaries: a pipeline stage and its read model](adr/016-ai-summaries-and-the-summary-read-model.md)
 - [ADR-017 — The admin SPA: first frontend and its serving topology](adr/017-admin-spa-first-frontend-and-serving-topology.md)
+- [ADR-018 — Real summarizer adapter: OpenAI-compatible, config-selected](adr/018-openai-compatible-summarizer-adapter.md)
+- [ADR-019 — Admin content viewers: storage-backed reads](adr/019-admin-content-viewers-and-storage-backed-reads.md)
