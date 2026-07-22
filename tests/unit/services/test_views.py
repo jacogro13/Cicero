@@ -1,11 +1,15 @@
-"""The read side: list documents and read a summary, bypassing the bus (ADR-015/016)."""
+"""The read side: list documents, read a summary, inspect the stored artefacts —
+all bypassing the bus (ADR-015/016/019)."""
+
+import pytest
 
 from cicero.domain.document.document import Document
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.document_status import DocumentStatus
+from cicero.domain.document.exceptions import DocumentNotFound
 from cicero.services import views
 
-from tests.fakes import make_in_memory_uow_factory
+from tests.fakes import InMemoryDocumentStorage, make_in_memory_uow_factory
 
 
 class TestListDocuments:
@@ -63,3 +67,66 @@ class TestGetDocumentSummary:
             )
             is None
         )
+
+
+async def _save_extracted(uow_factory, storage) -> Document:
+    """A document past extraction, with its Markdown blob stored at content_key."""
+    document = Document.create("Clean Code")
+    document.mark_extracting()
+    document.mark_extracted()
+    async with uow_factory() as uow:
+        await uow.documents.save(document)
+        await uow.commit()
+    await storage.put(document.content_key, b"# Clean Code\n\nExtracted.")
+    return document
+
+
+class TestGetDocumentContent:
+    async def test_returns_the_extracted_markdown_from_storage(self):
+        # Unlike the summary (a projection), the content view reads the blob off
+        # the storage port at the document's content_key (ADR-019).
+        uow_factory, storage = make_in_memory_uow_factory(), InMemoryDocumentStorage()
+        document = await _save_extracted(uow_factory, storage)
+
+        content = await views.get_document_content(uow_factory, storage, document.id)
+
+        assert content == "# Clean Code\n\nExtracted."
+
+    async def test_returns_none_before_the_document_is_extracted(self):
+        # An UPLOADED document has no content_key blob yet — None, not an error, so
+        # the route can report 404 without touching storage.
+        uow_factory, storage = make_in_memory_uow_factory(), InMemoryDocumentStorage()
+        document = Document.create("Clean Code")
+        async with uow_factory() as uow:
+            await uow.documents.save(document)
+            await uow.commit()
+
+        content = await views.get_document_content(uow_factory, storage, document.id)
+
+        assert content is None
+
+    async def test_raises_when_the_document_is_unknown(self):
+        with pytest.raises(DocumentNotFound):
+            await views.get_document_content(
+                make_in_memory_uow_factory(), InMemoryDocumentStorage(), DocumentId.new()
+            )
+
+
+class TestGetDocumentFile:
+    async def test_returns_the_original_pdf_bytes_from_storage(self):
+        uow_factory, storage = make_in_memory_uow_factory(), InMemoryDocumentStorage()
+        document = Document.create("Clean Code")
+        async with uow_factory() as uow:
+            await uow.documents.save(document)
+            await uow.commit()
+        await storage.put(document.source_key, b"%PDF-1.4 bytes")
+
+        file = await views.get_document_file(uow_factory, storage, document.id)
+
+        assert file == b"%PDF-1.4 bytes"
+
+    async def test_raises_when_the_document_is_unknown(self):
+        with pytest.raises(DocumentNotFound):
+            await views.get_document_file(
+                make_in_memory_uow_factory(), InMemoryDocumentStorage(), DocumentId.new()
+            )
