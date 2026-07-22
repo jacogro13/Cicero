@@ -22,6 +22,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+// For endpoints that serve a raw body (e.g. the extracted Markdown, text/markdown)
+// rather than JSON.
+async function requestText(path: string, init?: RequestInit): Promise<string> {
+  const response = await fetch(`/api${path}`, init);
+  if (!response.ok) {
+    throw new ApiError(response.status, await errorMessage(response));
+  }
+  return response.text();
+}
+
 // FastAPI reports errors as `{ "detail": "..." }`; fall back to the status line.
 async function errorMessage(response: Response): Promise<string> {
   try {
@@ -37,6 +47,7 @@ async function errorMessage(response: Response): Promise<string> {
 
 export const http = {
   get: <T>(path: string) => request<T>(path),
+  getText: (path: string) => requestText(path),
   post: <T>(path: string, body: FormData) =>
     request<T>(path, { method: "POST", body }),
   delete: (path: string) => request<void>(path, { method: "DELETE" }),

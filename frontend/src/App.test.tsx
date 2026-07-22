@@ -15,6 +15,7 @@ vi.mock("./api/documents", async (importOriginal) => {
     uploadDocument: vi.fn(),
     deleteDocument: vi.fn(),
     getSummary: vi.fn(),
+    getContent: vi.fn(),
   };
 });
 
@@ -101,6 +102,38 @@ describe("App", () => {
 
     expect(await screen.findByText("A hero sails home.")).toBeInTheDocument();
     expect(mockedApi.getSummary).toHaveBeenCalledWith("1");
+  });
+
+  it("opens the extracted text for an extracted document", async () => {
+    const user = userEvent.setup();
+    mockedApi.listDocuments.mockResolvedValue([
+      { id: "1", title: "The Odyssey", status: "EXTRACTED" },
+    ]);
+    mockedApi.getContent.mockResolvedValue("## Book I\n\nSing to me of the man…");
+
+    renderWithClient(<App />);
+    await screen.findByText("The Odyssey");
+
+    await user.click(screen.getByRole("button", { name: "View extracted" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Book I" }),
+    ).toBeInTheDocument();
+    expect(mockedApi.getContent).toHaveBeenCalledWith("1");
+  });
+
+  it("links to the original PDF for every document", async () => {
+    mockedApi.listDocuments.mockResolvedValue([
+      { id: "1", title: "Draft notes", status: "UPLOADED" },
+    ]);
+
+    renderWithClient(<App />);
+    await screen.findByText("Draft notes");
+
+    expect(screen.getByRole("link", { name: "View PDF" })).toHaveAttribute(
+      "href",
+      "/api/documents/1/file",
+    );
   });
 
   it("renders the summary Markdown as formatted elements, not raw text", async () => {

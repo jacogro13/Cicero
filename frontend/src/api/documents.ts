@@ -27,6 +27,17 @@ const TERMINAL: ReadonlySet<DocumentStatus> = new Set(["SUMMARISED", "FAILED"]);
 export const isPending = (doc: DocumentResponse): boolean =>
   !TERMINAL.has(doc.status);
 
+// The extracted Markdown blob exists once a document reaches EXTRACTED — the
+// admin "View extracted" action, mirroring the backend rule (ADR-019).
+const EXTRACTED_ONWARD: ReadonlySet<DocumentStatus> = new Set([
+  "EXTRACTED",
+  "SUMMARISING",
+  "SUMMARISED",
+]);
+
+export const hasExtractedContent = (doc: DocumentResponse): boolean =>
+  EXTRACTED_ONWARD.has(doc.status);
+
 export function listDocuments(): Promise<DocumentResponse[]> {
   return http.get<DocumentResponse[]>("/documents");
 }
@@ -47,4 +58,16 @@ export function deleteDocument(id: string): Promise<void> {
 
 export function getSummary(id: string): Promise<SummaryResponse> {
   return http.get<SummaryResponse>(`/documents/${id}/summary`);
+}
+
+// The extracted Markdown, served raw as text/markdown (ADR-019).
+export function getContent(id: string): Promise<string> {
+  return http.getText(`/documents/${id}/content`);
+}
+
+// The original PDF is streamed as application/pdf; a plain link opens it in the
+// browser's native viewer, so this returns the full same-origin URL (with the
+// /api prefix the http wrapper otherwise adds).
+export function fileUrl(id: string): string {
+  return `/api/documents/${id}/file`;
 }

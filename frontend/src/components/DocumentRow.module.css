@@ -45,6 +45,14 @@
   color: #4338ca;
 }
 
+/* The "View PDF" action is an anchor (a plain link to the PDF), styled to match
+   the sibling buttons. */
+.viewLink {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
 .delete {
   color: #b91c1c;
   border-color: #fecaca;
