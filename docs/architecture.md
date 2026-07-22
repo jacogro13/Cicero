@@ -46,7 +46,7 @@ imports the other); the rule is enforced in CI by import-linter.
 |-------|----------------|--------|
 | `domain/` | Entities, value objects, ports, messages, errors — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; messages `Command`/`Event` + `Upload`/`Extract`/`Summarise`/`Delete` commands, `DocumentEvent` base + `DocumentUploaded`/`ExtractionCompleted`/`DocumentProcessingFailed` events; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`, `DocumentExtractor`, `DocumentSummarizer`, `SummaryReadModel`; `DomainError` hierarchy) |
 | `services/` | Command/event handlers + the message bus that routes them, and the read-side `views` that bypass it | **Exists** (`MessageBus`; command handlers `UploadDocument`, `DeleteDocument`, `ExtractDocument`, `SummariseDocument`; the `AdvanceDocument` event handler on `DocumentUploaded`/`ExtractionCompleted`; `views.list_documents`/`get_document_summary` returning read models) |
-| `adapters/` | Implements domain ports against real infra (DB, object storage, extraction, LLM) | **Exists** (`PostgresDocumentRepository`, `PostgresSummaryReadModel`, `SqlAlchemyUnitOfWork`, `S3DocumentStorage`, `PyMuPDFExtractor`, `MockSummarizer`; OpenAI-compatible LLM to come) |
+| `adapters/` | Implements domain ports against real infra (DB, object storage, extraction, LLM) | **Exists** (`PostgresDocumentRepository`, `PostgresSummaryReadModel`, `SqlAlchemyUnitOfWork`, `S3DocumentStorage`, `PyMuPDFExtractor`, `MockSummarizer` + `OpenAISummarizer`) |
 | `entrypoints/` | FastAPI app, routes, schemas, error mapping, the serial job queue, the composition root (settings, engine lifespan, startup provisioning, bus bootstrap) | **Exists** (`GET /health`; `POST`/`GET`/`DELETE /api/documents`, `GET /api/documents/{id}/summary`; `JobQueue` + the `NEXT_COMMAND` stage table + restart recovery; live wiring over Postgres + S3) |
 
 ## Document lifecycle
@@ -265,10 +265,13 @@ persisted as a **read model** — the summarisation transaction writes `uow.summ
 *with* `mark_summarised`, so `SUMMARISED` ⇔ the summary is readable (no partial state a
 reader could hit). Failure commits `FAILED`; an unknown id raises `DocumentNotFound`.
 The default adapter is **`MockSummarizer`** (canned text, self-contained — the app
-summarises with no external LLM); any OpenAI-compatible endpoint plugs in behind the
-same port. Wiring the stage cost one status pair, one `NEXT_COMMAND` entry, and one
-subscription of `AdvanceDocument` to `ExtractionCompleted` — the bus payoff. See
-**[ADR-016](adr/016-ai-summaries-and-the-summary-read-model.md)**.
+summarises with no external LLM); **`OpenAISummarizer`** plugs in behind the same port
+when `LLM_BASE_URL` names any OpenAI-compatible endpoint, config-selected in the
+composition root so turnkey `docker compose up` stays key-free (ADR-018). Wiring the
+stage cost one status pair, one `NEXT_COMMAND` entry, and one subscription of
+`AdvanceDocument` to `ExtractionCompleted` — the bus payoff. See
+**[ADR-016](adr/016-ai-summaries-and-the-summary-read-model.md)** and
+**[ADR-018](adr/018-openai-compatible-summarizer-adapter.md)**.
 
 ## Background jobs: the serial queue
 
