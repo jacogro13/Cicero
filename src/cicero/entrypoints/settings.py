@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # Seconds to await a completion — non-streaming, so it must cover the whole
     # generation; a slow local model needs far more than a hosted one.
     llm_timeout: float = 60.0
+    # Char budget for a single summarization call; input above it is map-reduced
+    # (ADR-020). Default ≈ a 32k-context model with headroom; shrink for a smaller one.
+    llm_summarize_max_input_chars: int = 100_000
 
 
 @lru_cache

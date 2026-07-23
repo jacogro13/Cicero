@@ -100,6 +100,7 @@ def make_summarizer(settings: Settings) -> DocumentSummarizer:
             base_url=settings.llm_base_url,
             model=settings.llm_model,
             api_key=settings.llm_api_key,
+            max_input_chars=settings.llm_summarize_max_input_chars,
             timeout=settings.llm_timeout,
         )
     return MockSummarizer()

@@ -66,6 +66,7 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
       LLM_TIMEOUT: ${LLM_TIMEOUT:-60}
+      LLM_SUMMARIZE_MAX_INPUT_CHARS: ${LLM_SUMMARIZE_MAX_INPUT_CHARS:-100000}
     ports:
       - "${API_HOST_PORT:-8000}:8000"
     # Lets the container reach a host-run LLM at http://host.docker.internal:<port>
