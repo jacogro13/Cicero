@@ -269,11 +269,17 @@ reader could hit). Failure commits `FAILED`; an unknown id raises `DocumentNotFo
 The default adapter is **`MockSummarizer`** (canned text, self-contained — the app
 summarises with no external LLM); **`OpenAISummarizer`** plugs in behind the same port
 when `LLM_BASE_URL` names any OpenAI-compatible endpoint, config-selected in the
-composition root so turnkey `docker compose up` stays key-free (ADR-018). Wiring the
-stage cost one status pair, one `NEXT_COMMAND` entry, and one subscription of
-`AdvanceDocument` to `ExtractionCompleted` — the bus payoff. See
-**[ADR-016](adr/016-ai-summaries-and-the-summary-read-model.md)** and
-**[ADR-018](adr/018-openai-compatible-summarizer-adapter.md)**.
+composition root so turnkey `docker compose up` stays key-free (ADR-018). A document
+larger than the model's context window is summarised by **map-reduce** (ADR-020): a
+pure `split_for_budget` chunker (`domain/document/content_chunking.py` — greedy
+paragraph packing, fenced code kept atomic) slices it, each slice is summarised, and
+the parts are synthesised into one summary; input that fits stays a single call. The
+chunker is framework-free domain code, placed there so the future retrieval index can
+reuse it. Wiring the stage cost one status pair, one `NEXT_COMMAND` entry, and one
+subscription of `AdvanceDocument` to `ExtractionCompleted` — the bus payoff. See
+**[ADR-016](adr/016-ai-summaries-and-the-summary-read-model.md)**,
+**[ADR-018](adr/018-openai-compatible-summarizer-adapter.md)**, and
+**[ADR-020](adr/020-map-reduce-summarization-for-oversized-documents.md)**.
 
 ## Background jobs: the serial queue
 
@@ -456,8 +462,9 @@ when the slice is built test-first (so the ADR reflects real, validated code):
   web article as a document (trafilatura/Playwright) extends the `DocumentExtractor`
   port when that slice lands. _ADR to follow._
 - **AI summaries (the read experience)** — a single summary per document exists (see
-  "Summarising a document"). Still ahead: **per-chapter** summaries once chapter
-  structure (TOC) and document kind land, and map-reduce for oversized chapters. Built
+  "Summarising a document"), map-reduced when it overflows the model's context
+  (ADR-020). Still ahead: **per-chapter** summaries once chapter structure (TOC) and
+  document kind land. Built
   on top: chat over the document (any source) and, **for articles only (for now)**, a
   generated podcast (script + audio). Mock adapters by default (self-contained); any
   OpenAI-compatible endpoint pluggable (optional Ollama compose profile).
@@ -563,3 +570,4 @@ references a decision made later.
 - [ADR-017 — The admin SPA: first frontend and its serving topology](adr/017-admin-spa-first-frontend-and-serving-topology.md)
 - [ADR-018 — Real summarizer adapter: OpenAI-compatible, config-selected](adr/018-openai-compatible-summarizer-adapter.md)
 - [ADR-019 — Admin content viewers: storage-backed reads](adr/019-admin-content-viewers-and-storage-backed-reads.md)
+- [ADR-020 — Map-reduce summarization for oversized documents](adr/020-map-reduce-summarization-for-oversized-documents.md)
