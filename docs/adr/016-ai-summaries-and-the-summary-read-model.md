@@ -15,9 +15,9 @@
 Extraction leaves a document at `EXTRACTED` with internal Markdown at
 `content_key` that the reader never sees. A summary *is* the read experience.
 Producing it is a second slow stage — the first real test of the ADR-014 claim
-that a stage costs one status, one `NEXT_COMMAND` entry, one subscription. At
-`#13` the extracted text is flat Markdown (no chapters until `#16`, no kind until
-`#17`), so this is **one summary per document**.
+that a stage costs one status, one `NEXT_COMMAND` entry, one subscription. The
+extracted text is currently flat Markdown — no chapter structure, no document kind
+yet — so this is **one summary per document**.
 
 ---
 
@@ -48,7 +48,7 @@ read directly by `views.get_document_summary` returning a `SummaryView`. The
 summarisation stage **writes it in the same transaction as `mark_summarised()`**,
 so `SUMMARISED` ⇔ the summary is readable. A separate event-driven *projector*
 buys nothing while the source is one external call and the shape is a scalar; it
-arrives at `#16`, when per-chapter structure makes the read shape diverge.
+arrives when per-chapter structure makes the read shape diverge.
 
 **The single failure terminal gets a single failure fact** — `ExtractionFailed`
 is renamed `DocumentProcessingFailed` (stage-agnostic, matching ADR-014's single
@@ -70,7 +70,7 @@ is renamed `DocumentProcessingFailed` (stage-agnostic, matching ADR-014's single
 - `FAILED` stays single now that a second stage can fail — refreshing ADR-014's
   justification, which was "speculative until a second stage can fail". It holds
   for a sharper reason: dispatch treats every spine failure identically (next
-  command `None`), and the eventual per-stage *retry* (#24) wants the failed stage
+  command `None`), and an eventual per-stage *retry* wants the failed stage
   as **data** (a resume point + reason a status can't carry), not more terminals.
-  Best-effort branches (#18/#19/#21) carry their own failure state, since those
-  failures do not stop the read experience.
+  Later best-effort branches (enrichment, podcast, indexing) carry their own failure
+  state, since those failures do not stop the read experience.
