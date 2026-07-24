@@ -45,7 +45,7 @@ class TestDocumentStatusLifecycle:
     def test_storage_keys_are_derived_from_identity(self):
         doc = Document.create("Any Title")
         assert doc.source_key == f"documents/{doc.id.value}/source"
-        assert doc.content_key == f"documents/{doc.id.value}/content"
+        assert doc.chapter_key(2) == f"documents/{doc.id.value}/chapters/2"
 
     def test_mark_extracting_transitions_to_extracting(self):
         doc = Document.create("Any Title")

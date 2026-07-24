@@ -3,6 +3,7 @@ all bypassing the bus (ADR-015/016/019)."""
 
 import pytest
 
+from cicero.domain.document.chapter import Chapter
 from cicero.domain.document.document import Document
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.document_status import DocumentStatus
@@ -70,30 +71,33 @@ class TestGetDocumentSummary:
 
 
 async def _save_extracted(uow_factory, storage) -> Document:
-    """A document past extraction, with its Markdown blob stored at content_key."""
+    """A document past extraction: its ordered chapter titles recorded and each
+    chapter's Markdown blob in storage (ADR-021)."""
     document = Document.create("Clean Code")
     document.mark_extracting()
     document.mark_extracted()
     async with uow_factory() as uow:
         await uow.documents.save(document)
+        await uow.chapters.save(document.id, ["Chapter One", "Chapter Two"])
         await uow.commit()
-    await storage.put(document.content_key, b"# Clean Code\n\nExtracted.")
+    await storage.put(document.chapter_key(0), b"Body of one.")
+    await storage.put(document.chapter_key(1), b"Body of two.")
     return document
 
 
 class TestGetDocumentContent:
-    async def test_returns_the_extracted_markdown_from_storage(self):
-        # Unlike the summary (a projection), the content view reads the blob off
-        # the storage port at the document's content_key (ADR-019).
+    async def test_assembles_the_chapters_under_their_titles(self):
+        # The admin content view joins the per-chapter blobs off the storage port
+        # under their bookmark titles, reconstructing the whole document (ADR-021).
         uow_factory, storage = make_in_memory_uow_factory(), InMemoryDocumentStorage()
         document = await _save_extracted(uow_factory, storage)
 
         content = await views.get_document_content(uow_factory, storage, document.id)
 
-        assert content == "# Clean Code\n\nExtracted."
+        assert content == "# Chapter One\n\nBody of one.\n\n# Chapter Two\n\nBody of two."
 
     async def test_returns_none_before_the_document_is_extracted(self):
-        # An UPLOADED document has no content_key blob yet — None, not an error, so
+        # An UPLOADED document has no chapters yet — None, not an error, so
         # the route can report 404 without touching storage.
         uow_factory, storage = make_in_memory_uow_factory(), InMemoryDocumentStorage()
         document = Document.create("Clean Code")

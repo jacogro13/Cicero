@@ -8,6 +8,7 @@ readable exactly when the document is SUMMARISED. An unknown id raises ``Documen
 import pytest
 
 from cicero.domain.document import commands
+from cicero.domain.document.chapter import Chapter
 from cicero.domain.document.document import Document
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.document_status import DocumentStatus
@@ -21,19 +22,23 @@ from tests.fakes import (
     make_in_memory_uow_factory,
 )
 
+# One chapter, so the joined extracted text the stage feeds the summarizer is just it.
+_CHAPTERS = [Chapter("Clean Code", "# Clean Code\n\nBody.")]
 _EXTRACTED_MARKDOWN = "# Clean Code\n\nBody."
 
 
 async def _extracted_document(uow_factory, storage):
     """Arrange the precondition SummariseDocument consumes — a document at EXTRACTED
-    with its extracted markdown in storage — built directly, not by running the
-    upload+extract stages, so this suite exercises only the summarise handler."""
+    with its chapters in storage — built directly, not by running the upload+extract
+    stages, so this suite exercises only the summarise handler."""
     document = Document.create("Clean Code")
     document.mark_extracted()
     async with uow_factory() as uow:
         await uow.documents.save(document)
+        await uow.chapters.save(document.id, [c.title for c in _CHAPTERS])
         await uow.commit()
-    await storage.put(document.content_key, _EXTRACTED_MARKDOWN.encode())
+    for index, chapter in enumerate(_CHAPTERS):
+        await storage.put(document.chapter_key(index), chapter.markdown.encode())
     return document
 
 
