@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterator
 from types import TracebackType
 from typing import Self
 
+from cicero.domain.document.ports.chapter_read_model import ChapterReadModel
 from cicero.domain.document.ports.document_repository import DocumentRepository
 from cicero.domain.document.ports.summary_read_model import SummaryReadModel
 from cicero.domain.messages import Event
@@ -14,11 +15,12 @@ class UnitOfWork(ABC):
     """Port: the transaction boundary (ADR-003).
 
     An async context manager exposing the repositories and read-model stores a
-    transaction spans (``uow.documents``, ``uow.summaries``). Commit is explicit;
-    any other exit rolls back.
+    transaction spans (``uow.documents``, ``uow.chapters``, ``uow.summaries``).
+    Commit is explicit; any other exit rolls back.
     """
 
     documents: DocumentRepository
+    chapters: ChapterReadModel
     summaries: SummaryReadModel
 
     @abstractmethod

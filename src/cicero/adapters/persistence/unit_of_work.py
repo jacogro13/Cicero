@@ -5,6 +5,7 @@ from typing import Self
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from cicero.adapters.persistence.chapter_read_model import PostgresChapterReadModel
 from cicero.adapters.persistence.repository import PostgresDocumentRepository
 from cicero.adapters.persistence.summary_read_model import PostgresSummaryReadModel
 from cicero.domain.ports.unit_of_work import UnitOfWork, UnitOfWorkFactory
@@ -18,6 +19,7 @@ class SqlAlchemyUnitOfWork(UnitOfWork):
     """
 
     documents: PostgresDocumentRepository
+    chapters: PostgresChapterReadModel
     summaries: PostgresSummaryReadModel
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
@@ -26,6 +28,7 @@ class SqlAlchemyUnitOfWork(UnitOfWork):
     async def __aenter__(self) -> Self:
         self._session = self._session_factory()
         self.documents = PostgresDocumentRepository(self._session)
+        self.chapters = PostgresChapterReadModel(self._session)
         self.summaries = PostgresSummaryReadModel(self._session)
         return self
 

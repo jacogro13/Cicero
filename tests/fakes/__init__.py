@@ -6,6 +6,7 @@ extraction.
 
 from tests.fakes.extraction import StubDocumentExtractor
 from tests.fakes.persistence import (
+    InMemoryChapterReadModel,
     InMemoryDocumentRepository,
     InMemorySummaryReadModel,
     InMemoryUnitOfWork,
@@ -15,6 +16,7 @@ from tests.fakes.storage import InMemoryDocumentStorage
 from tests.fakes.summarization import StubDocumentSummarizer
 
 __all__ = [
+    "InMemoryChapterReadModel",
     "InMemoryDocumentRepository",
     "InMemorySummaryReadModel",
     "InMemoryUnitOfWork",

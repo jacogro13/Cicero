@@ -14,15 +14,6 @@ from cicero.domain.document.exceptions import DocumentNotFound
 from cicero.domain.document.ports.document_storage import DocumentStorage
 from cicero.domain.ports.unit_of_work import UnitOfWorkFactory
 
-# The extracted Markdown blob (content_key) exists from EXTRACTED onwards (ADR-019).
-_EXTRACTED_STATUSES = frozenset(
-    {
-        DocumentStatus.EXTRACTED,
-        DocumentStatus.SUMMARISING,
-        DocumentStatus.SUMMARISED,
-    }
-)
-
 
 @dataclass(frozen=True)
 class DocumentView:
@@ -63,18 +54,23 @@ async def get_document_content(
     storage: DocumentStorage,
     document_id: DocumentId,
 ) -> str | None:
-    """The extracted Markdown from storage, or ``None`` until the document is
-    ``EXTRACTED`` — a blob read via the storage port, not a projection (ADR-019).
+    """The extracted Markdown for admin inspection — the chapter blobs assembled
+    under their titles — or ``None`` until the document has chapters (ADR-019/021).
 
     Raises :class:`DocumentNotFound` for an unknown id.
     """
     async with uow_factory() as uow:
         document = await uow.documents.find_by_id(document_id)
-    if document is None:
-        raise DocumentNotFound(document_id)
-    if document.status not in _EXTRACTED_STATUSES:
+        if document is None:
+            raise DocumentNotFound(document_id)
+        titles = await uow.chapters.list(document_id)
+    if not titles:
         return None
-    return (await storage.get(document.content_key)).decode("utf-8")
+    sections = [
+        f"# {title}\n\n{(await storage.get(document.chapter_key(index))).decode('utf-8')}"
+        for index, title in enumerate(titles)
+    ]
+    return "\n\n".join(sections)
 
 
 async def get_document_file(

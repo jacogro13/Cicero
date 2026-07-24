@@ -8,6 +8,7 @@ without any handler naming a verb.
 """
 
 from cicero.domain.document import commands
+from cicero.domain.document.chapter import Chapter
 from cicero.domain.document.document_status import DocumentStatus
 from cicero.domain.document.events import DocumentUploaded, ExtractionCompleted
 from cicero.entrypoints.job_queue import JobQueue
@@ -58,7 +59,7 @@ class TestUploadRunsThePipeline:
         bus, queue = _wire(
             uow_factory,
             InMemoryDocumentStorage(),
-            StubDocumentExtractor("# Clean Code"),
+            StubDocumentExtractor([Chapter("Clean Code", "# Clean Code")]),
             StubDocumentSummarizer("A crisp summary."),
         )
         await queue.start(make_pipeline_consumer(bus, uow_factory))

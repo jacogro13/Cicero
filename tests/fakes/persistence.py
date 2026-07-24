@@ -12,6 +12,7 @@ from typing import Self
 
 from cicero.domain.document.document import Document
 from cicero.domain.document.document_id import DocumentId
+from cicero.domain.document.ports.chapter_read_model import ChapterReadModel
 from cicero.domain.document.ports.document_repository import DocumentRepository
 from cicero.domain.document.ports.summary_read_model import SummaryReadModel
 from cicero.domain.ports.unit_of_work import UnitOfWork, UnitOfWorkFactory
@@ -86,15 +87,41 @@ class InMemorySummaryReadModel(SummaryReadModel):
         self._pending.clear()
 
 
+class InMemoryChapterReadModel(ChapterReadModel):
+    """Shared chapters dict + a per-transaction write buffer, mirroring the
+    repository's commit/rollback so titles are visible only once committed."""
+
+    def __init__(self, store: dict[DocumentId, list[str]]) -> None:
+        self._store = store
+        self._pending: dict[DocumentId, list[str]] = {}
+
+    async def save(self, document_id: DocumentId, titles: list[str]) -> None:
+        self._pending[document_id] = list(titles)
+
+    async def list(self, document_id: DocumentId) -> list[str]:
+        if document_id in self._pending:
+            return list(self._pending[document_id])
+        return list(self._store.get(document_id, []))
+
+    def flush(self) -> None:
+        self._store.update(self._pending)
+        self._pending.clear()
+
+    def discard(self) -> None:
+        self._pending.clear()
+
+
 class InMemoryUnitOfWork(UnitOfWork):
     """One ``async with`` block is one transaction over the shared stores."""
 
     def __init__(
         self,
         store: dict[DocumentId, Document],
+        chapter_store: dict[DocumentId, list[str]],
         summary_store: dict[DocumentId, str],
     ) -> None:
         self.documents = InMemoryDocumentRepository(store)
+        self.chapters = InMemoryChapterReadModel(chapter_store)
         self.summaries = InMemorySummaryReadModel(summary_store)
 
     async def __aenter__(self) -> Self:
@@ -113,10 +140,12 @@ class InMemoryUnitOfWork(UnitOfWork):
 
     async def commit(self) -> None:
         self.documents.flush()
+        self.chapters.flush()
         self.summaries.flush()
 
     async def rollback(self) -> None:
         self.documents.discard()
+        self.chapters.discard()
         self.summaries.discard()
 
 
@@ -129,9 +158,10 @@ def make_in_memory_uow_factory(
     write in one transaction and read it back in another.
     """
     backing_store: dict[DocumentId, Document] = {} if store is None else store
+    chapter_store: dict[DocumentId, list[str]] = {}
     summary_store: dict[DocumentId, str] = {}
 
     def factory() -> InMemoryUnitOfWork:
-        return InMemoryUnitOfWork(backing_store, summary_store)
+        return InMemoryUnitOfWork(backing_store, chapter_store, summary_store)
 
     return factory

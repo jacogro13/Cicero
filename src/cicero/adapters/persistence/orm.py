@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Column, Enum, String, Table, Uuid
+from sqlalchemy import Column, Enum, Integer, String, Table, Uuid
 from sqlalchemy.orm import registry
 from sqlalchemy.types import TypeDecorator
 
@@ -37,6 +37,16 @@ documents = Table(
     Column("id", DocumentIdType, primary_key=True),
     Column("title", String, nullable=False),
     Column("status", Enum(DocumentStatus, name="document_status"), nullable=False),
+)
+
+# The chapters read model (ADR-021): a document's ordered chapter titles — its
+# table of contents. Content lives in object storage; only the titles are here.
+chapters = Table(
+    "chapters",
+    metadata,
+    Column("document_id", DocumentIdType, primary_key=True),
+    Column("position", Integer, primary_key=True),
+    Column("title", String, nullable=False),
 )
 
 # The summaries read model (ADR-016): a denormalized projection, so it is a plain

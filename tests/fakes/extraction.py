@@ -1,15 +1,16 @@
-"""In-memory ``DocumentExtractor`` double for unit tests — returns canned
-Markdown without touching a real PDF library (ADR-009).
+"""In-memory ``DocumentExtractor`` double for unit tests — returns canned chapters
+without touching a real PDF library (ADR-009/021).
 """
 
 from __future__ import annotations
 
+from cicero.domain.document.chapter import Chapter
 from cicero.domain.document.ports.document_extractor import DocumentExtractor
 
 
 class StubDocumentExtractor(DocumentExtractor):
-    def __init__(self, markdown: str = "# Extracted\n") -> None:
-        self._markdown = markdown
+    def __init__(self, chapters: list[Chapter] | None = None) -> None:
+        self._chapters = chapters if chapters is not None else [Chapter("Chapter One", "# Extracted\n")]
 
-    async def extract_markdown(self, data: bytes) -> str:
-        return self._markdown
+    async def extract(self, data: bytes) -> list[Chapter]:
+        return self._chapters

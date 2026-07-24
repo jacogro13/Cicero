@@ -133,9 +133,9 @@ class TestDocumentSummary:
         assert response.status_code == 404
 
 
-def _seed_extracted(client: TestClient, markdown: str) -> Document:
-    """Put an EXTRACTED document + its Markdown blob into the client's shared
-    read seams, without running the pipeline."""
+def _seed_extracted(client: TestClient) -> Document:
+    """Put an EXTRACTED document + one chapter into the client's shared read seams,
+    without running the pipeline."""
     overrides = client.app.dependency_overrides
     uow_factory = overrides[get_uow_factory]()
     storage = overrides[get_document_storage]()
@@ -146,8 +146,9 @@ def _seed_extracted(client: TestClient, markdown: str) -> Document:
         document.mark_extracted()
         async with uow_factory() as uow:
             await uow.documents.save(document)
+            await uow.chapters.save(document.id, ["Clean Code"])
             await uow.commit()
-        await storage.put(document.content_key, markdown.encode())
+        await storage.put(document.chapter_key(0), b"Extracted.")
         return document
 
     return asyncio.run(seed())
@@ -156,7 +157,7 @@ def _seed_extracted(client: TestClient, markdown: str) -> Document:
 class TestDocumentContent:
     def test_serves_the_extracted_markdown(self):
         client = _client()
-        document = _seed_extracted(client, "# Clean Code\n\nExtracted.")
+        document = _seed_extracted(client)
 
         response = client.get(f"/api/documents/{document.id.value}/content")
 

@@ -13,8 +13,10 @@ logger = logging.getLogger(__name__)
 
 
 class ExtractDocument:
-    """Handler for ``ExtractDocument``: extract the source to Markdown, driving
-    EXTRACTING→EXTRACTED/FAILED (ADR-009). Raises ``DocumentNotFound`` for an unknown id.
+    """Handler for ``ExtractDocument``: extract the source into chapters, driving
+    EXTRACTING→EXTRACTED/FAILED (ADR-009/021). Each chapter's Markdown is stored at
+    its chapter key and the ordered titles via ``uow.chapters``. Raises
+    ``DocumentNotFound`` for an unknown id.
     """
 
     def __init__(self, storage: DocumentStorage, extractor: DocumentExtractor) -> None:
@@ -33,14 +35,23 @@ class ExtractDocument:
 
         try:
             source = await self._storage.get(document.source_key)
-            markdown = await self._extractor.extract_markdown(source)
-            await self._storage.put(document.content_key, markdown.encode())
+            chapters = await self._extractor.extract(source)
+            # Storage-first (ADR-004): the blobs land before EXTRACTED commits, so an
+            # EXTRACTED document never points at a missing chapter.
+            for index, chapter in enumerate(chapters):
+                await self._storage.put(document.chapter_key(index), chapter.markdown.encode())
         except Exception:
             logger.exception("Extraction failed id=%s", document_id)
             await self._mark(document_id, uow, lambda doc: doc.mark_failed())
             return
 
-        await self._mark(document_id, uow, lambda doc: doc.mark_extracted())
+        titles = [chapter.title for chapter in chapters]
+        async with uow:
+            document = await uow.documents.find_by_id(document_id)
+            await uow.chapters.save(document_id, titles)
+            document.mark_extracted()
+            await uow.documents.save(document)
+            await uow.commit()
 
     async def _mark(
         self,

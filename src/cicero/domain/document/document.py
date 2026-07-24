@@ -51,10 +51,10 @@ class Document:
         """Storage key for the original source file (ADR-004)."""
         return self._storage_key("source")
 
-    @property
-    def content_key(self) -> str:
-        """Storage key for the extracted text — internal, never shown to the reader (ADR-004)."""
-        return self._storage_key("content")
+    def chapter_key(self, index: int) -> str:
+        """Storage key for a chapter's extracted Markdown — internal, never shown
+        to the reader (ADR-021)."""
+        return self._storage_key(f"chapters/{index}")
 
     def _storage_key(self, name: str) -> str:
         """Object-storage layout, a pure function of identity: ``documents/{id}/{name}``."""
