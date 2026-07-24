@@ -46,10 +46,10 @@ imports the other); the rule is enforced in CI by import-linter.
 
 | Layer | Responsibility | Status |
 |-------|----------------|--------|
-| `domain/` | Entities, value objects, ports, messages, errors — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`; messages `Command`/`Event` + `Upload`/`Extract`/`Summarise`/`Delete` commands, `DocumentEvent` base + `DocumentUploaded`/`ExtractionCompleted`/`DocumentProcessingFailed` events; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`, `DocumentExtractor`, `DocumentSummarizer`, `SummaryReadModel`; `DomainError` hierarchy) |
-| `services/` | Command/event handlers + the message bus that routes them, and the read-side `views` that bypass it | **Exists** (`MessageBus`; command handlers `UploadDocument`, `DeleteDocument`, `ExtractDocument`, `SummariseDocument`; the `AdvanceDocument` event handler on `DocumentUploaded`/`ExtractionCompleted`; `views.list_documents`/`get_document_summary` returning read models) |
-| `adapters/` | Implements domain ports against real infra (DB, object storage, extraction, LLM) | **Exists** (`PostgresDocumentRepository`, `PostgresSummaryReadModel`, `SqlAlchemyUnitOfWork`, `S3DocumentStorage`, `PyMuPDFExtractor`, `MockSummarizer` + `OpenAISummarizer`) |
-| `entrypoints/` | FastAPI app, routes, schemas, error mapping, the serial job queue, the composition root (settings, engine lifespan, startup provisioning, bus bootstrap) | **Exists** (`GET /health`; `POST`/`GET`/`DELETE /api/documents`, `GET /api/documents/{id}/summary`; `JobQueue` + the `NEXT_COMMAND` stage table + restart recovery; live wiring over Postgres + S3) |
+| `domain/` | Entities, value objects, ports, messages, errors — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`, `Chapter`, the pure `chapter_ranges`; messages `Command`/`Event` + `Upload`/`Extract`/`Summarise`/`Delete` commands, `DocumentEvent` base + `DocumentUploaded`/`ExtractionCompleted`/`DocumentProcessingFailed` events; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`, `DocumentExtractor`, `DocumentSummarizer`, `ChapterReadModel`, `SummaryReadModel`; `DomainError` hierarchy) |
+| `services/` | Command/event handlers + the message bus that routes them, and the read-side `views` that bypass it | **Exists** (`MessageBus`; command handlers `UploadDocument`, `DeleteDocument`, `ExtractDocument`, `SummariseDocument`; the `AdvanceDocument` event handler on `DocumentUploaded`/`ExtractionCompleted`; `views.list_documents`/`get_document_summary`/`get_document_chapters` returning read models) |
+| `adapters/` | Implements domain ports against real infra (DB, object storage, extraction, LLM) | **Exists** (`PostgresDocumentRepository`, `PostgresChapterReadModel`, `PostgresSummaryReadModel`, `SqlAlchemyUnitOfWork`, `S3DocumentStorage`, `PyMuPDFExtractor`, `MockSummarizer` + `OpenAISummarizer`) |
+| `entrypoints/` | FastAPI app, routes, schemas, error mapping, the serial job queue, the composition root (settings, engine lifespan, startup provisioning, bus bootstrap) | **Exists** (`GET /health`; `POST`/`GET`/`DELETE /api/documents`, `GET /api/documents/{id}/summary` + `/chapters`; `JobQueue` + the `NEXT_COMMAND` stage table + restart recovery; live wiring over Postgres + S3) |
 
 ## Document lifecycle
 
@@ -59,14 +59,16 @@ single terminal any stage falls to — with transitions encapsulated as entity
 methods, not a free `status` setter. Each member names the **pipeline stage
 reached**, not readiness (ADR-014): that is what lets the edge derive the next
 command from a stored status, and what lets a later stage append to the chain
-instead of redefining a terminal name. The internal extracted text (an opaque
-locator, never shown to the reader) exists from EXTRACTED onwards; the summary — the
-read experience — from SUMMARISED. `content_key` is not lifecycle state — it is the
-identity-derived address of that text (`source_key`'s twin), always computable, so
-nothing has to be set or kept in sync on transition. See
+instead of redefining a terminal name. The internal extracted text — split into **chapters** at the PDF's own bookmarks,
+never shown to the reader — exists from EXTRACTED onwards; the per-chapter summaries,
+the read experience, from SUMMARISED. Chapter *content* lives in object storage at
+identity-derived keys (`chapter_key(i)`, `source_key`'s twins, always computable); the
+chapter *titles* — the table of contents — in a read model. Neither is lifecycle
+state, so nothing content-shaped has to be kept in sync on transition. See
 **[ADR-002](adr/002-document-status-state-machine.md)**,
-**[ADR-014](adr/014-status-driven-pipeline-advance.md)**, and
-**[ADR-016](adr/016-ai-summaries-and-the-summary-read-model.md)**.
+**[ADR-014](adr/014-status-driven-pipeline-advance.md)**,
+**[ADR-016](adr/016-ai-summaries-and-the-summary-read-model.md)**, and
+**[ADR-021](adr/021-chapters-from-the-pdf-table-of-contents.md)**.
 
 ```mermaid
 stateDiagram-v2
@@ -142,8 +144,8 @@ The first use case is a **command handler** in the `services/` layer.
 **`UploadDocument`** handles a `commands.UploadDocument` (title + source bytes): it
 stores the file first, then commits the metadata in a Unit of Work — the deliberate
 ordering ADR-004 explains. The file's location is `Document.source_key`
-(`documents/{id}/source`), a pure function of identity, distinct from `content_key`
-(the extracted text). Storage is reached through a third domain port,
+(`documents/{id}/source`), a pure function of identity, distinct from the chapter
+keys `chapter_key(i)` (the extracted text). Storage is reached through a third domain port,
 **`DocumentStorage`** (`domain/document/ports/`), in-memory in tests and an
 S3-compatible adapter for real (above). Storage is injected at bootstrap; the bus
 supplies the Unit of Work per call. Upload leaves the document `UPLOADED` and the
@@ -203,13 +205,17 @@ functions that take the `uow_factory`, open a short read-only transaction, and r
 a **read model** — no command, no commit. `views.list_documents` → `list[DocumentView]`
 (`GET /api/documents`) still reads through the aggregate repository, since a document
 list does not diverge from the aggregate. `views.get_document_summary` →
-`SummaryView | None` (`GET /api/documents/{id}/summary`, 404 when absent) reads the
-**denormalized `summaries` store** instead — the first view whose shape genuinely
-departs from the write model, maintained by the summarisation stage (ADR-016). A read
-model is decoupled from both the domain `Document` (the write model) and the wire
-**DTO** (`DocumentResponse`/`SummaryResponse`) — the seam that lets the reader
-experience diverge from the aggregate. See **[ADR-015](adr/015-cqrs-read-side.md)** and
-**[ADR-016](adr/016-ai-summaries-and-the-summary-read-model.md)**.
+`SummaryView | None` (`GET /api/documents/{id}/summary`, 404 when absent) joins the
+per-chapter summaries from the **denormalized `summaries` store** for admin inspection;
+`views.get_document_chapters` → `list[ChapterView]` (`GET /api/documents/{id}/chapters`)
+zips the **`chapters` store** (the table of contents) with those summaries — the
+reader's structured read side. Both stores are denormalized read models maintained by
+the pipeline stages (ADR-016/021), decoupled from both the domain `Document` (the write
+model) and the wire **DTO** (`DocumentResponse`/`SummaryResponse`/`ChapterResponse`) —
+the seam that lets the reader experience diverge from the aggregate. See
+**[ADR-015](adr/015-cqrs-read-side.md)**,
+**[ADR-016](adr/016-ai-summaries-and-the-summary-read-model.md)**, and
+**[ADR-021](adr/021-chapters-from-the-pdf-table-of-contents.md)**.
 
 ## Deleting a document
 
@@ -225,19 +231,24 @@ raises `DocumentNotFound`. `DELETE /api/documents/{id}` returns 204.
 the request path (see "Background jobs"), not by a route. It turns an uploaded source into the
 internal Markdown that summarization will read (never shown to the reader), driving
 the rest of the status machine for real: it commits `EXTRACTING` first (so the
-in-flight state is observable), runs the heavy I/O outside any transaction — read
-the source bytes (`DocumentStorage.get`), extract Markdown (the
-**`DocumentExtractor`** port), write the result blob to `document.content_key` —
-then commits `EXTRACTED`, raising `ExtractionCompleted` (the fact summaries will
-subscribe to). The service never mints a storage key: `content_key` is the
-document's own identity-derived address (`documents/{id}/content`). Storage-first
-mirrors upload (ADR-004): the blob is written before `EXTRACTED` is committed, so an
-EXTRACTED document never points at a missing content file. Extraction failure commits
+in-flight state is observable), runs the heavy I/O outside any transaction — read the
+source bytes (`DocumentStorage.get`), split into **chapters** at the PDF's level-1
+bookmarks and render each to Markdown (the **`DocumentExtractor`** port, returning
+`list[Chapter]`; no bookmarks → one chapter, the article/fallback shape), write each
+chapter's blob to `document.chapter_key(i)` — then commits `EXTRACTED` *with* the
+ordered chapter titles (`uow.chapters`), raising `ExtractionCompleted` (the fact
+summaries subscribe to). Boundaries come from the PDF's table of contents via the pure
+`chapter_ranges` domain function, kept distinct from the PyMuPDF rendering. The service
+never mints a storage key: `chapter_key(i)` is the document's own identity-derived
+address (`documents/{id}/chapters/{i}`, `source_key`'s twin). Storage-first mirrors
+upload (ADR-004): the chapter blobs are written before `EXTRACTED` is committed, so an
+EXTRACTED document never points at a missing chapter. Extraction failure commits
 `FAILED` and raises `DocumentProcessingFailed` (status is the outcome channel); an
 unknown id raises `DocumentNotFound`. The real extractor is **`PyMuPDFExtractor`**
 (`pymupdf4llm`, in-process, offloaded to the anyio thread); a stub backs the unit
-tests. See **[ADR-009](adr/009-content-extraction-and-the-extract-document-use-case.md)**
-and **[ADR-012](adr/012-pipeline-as-events.md)**.
+tests. See **[ADR-009](adr/009-content-extraction-and-the-extract-document-use-case.md)**,
+**[ADR-012](adr/012-pipeline-as-events.md)**, and
+**[ADR-021](adr/021-chapters-from-the-pdf-table-of-contents.md)**.
 
 ```mermaid
 sequenceDiagram
@@ -247,10 +258,10 @@ sequenceDiagram
     participant E as DocumentExtractor
     U->>W: commit mark_extracting()
     U->>S: source = await get(source_key)
-    U->>E: markdown = await extract_markdown(source)
+    U->>E: chapters = await extract(source)
     alt extraction succeeds
-        U->>S: await put(document.content_key, markdown)
-        U->>W: commit mark_extracted()
+        U->>S: await put(chapter_key(i), chapter.markdown) — per chapter
+        U->>W: commit titles (uow.chapters) + mark_extracted()
     else extraction fails
         U->>W: commit mark_failed()
     end
@@ -260,17 +271,18 @@ sequenceDiagram
 
 **`SummariseDocument`** is the next stage on the same conveyor — a command handler the
 worker issues once a document reaches `EXTRACTED`. It mirrors extraction: commit
-`SUMMARISING` first, read the extracted Markdown (`content_key`), summarise it through
-the **`DocumentSummarizer`** port outside any transaction, then commit `SUMMARISED`. The
-summary is the **read experience**, so unlike the internal extracted text it is
-persisted as a **read model** — the summarisation transaction writes `uow.summaries`
-*with* `mark_summarised`, so `SUMMARISED` ⇔ the summary is readable (no partial state a
-reader could hit). Failure commits `FAILED`; an unknown id raises `DocumentNotFound`.
+`SUMMARISING` first, then **summarise each chapter** from its own stored Markdown
+through the **`DocumentSummarizer`** port outside any transaction, then commit
+`SUMMARISED`. The summaries are the **read experience**, so unlike the internal
+extracted text they are persisted as a **read model** — the transaction writes each
+chapter's summary to `uow.summaries` (keyed by chapter) *with* `mark_summarised`, so
+`SUMMARISED` ⇔ the summaries are readable (no partial state a reader could hit).
+Failure commits `FAILED`; an unknown id raises `DocumentNotFound`.
 The default adapter is **`MockSummarizer`** (canned text, self-contained — the app
 summarises with no external LLM); **`OpenAISummarizer`** plugs in behind the same port
 when `LLM_BASE_URL` names any OpenAI-compatible endpoint, config-selected in the
 composition root so turnkey `docker compose up` stays key-free (ADR-018). A document
-larger than the model's context window is summarised by **map-reduce** (ADR-020): a
+chapter larger than the model's context window is summarised by **map-reduce** (ADR-020): a
 pure `split_for_budget` chunker (`domain/document/content_chunking.py` — greedy
 paragraph packing, fenced code kept atomic) slices it, each slice is summarised, and
 the parts are synthesised into one summary; input that fits stays a single call. The
@@ -347,10 +359,11 @@ See **[ADR-008](adr/008-domain-exceptions-and-http-error-mapping.md)**.
 The `entrypoints/` layer puts the use cases on the wire. Routes live in an
 `APIRouter` mounted under `/api` — `POST /api/documents` (a `multipart` `title` +
 file upload), `GET /api/documents` (the library list),
-`GET /api/documents/{id}/summary` (the read experience, 404 until summarised),
-`GET /api/documents/{id}/content` (admin inspection: the extracted Markdown as
-`text/markdown`, 404 until EXTRACTED) and `GET /api/documents/{id}/file` (the
-original PDF as `application/pdf`), and
+`GET /api/documents/{id}/summary` (admin: the per-chapter summaries joined, 404 until
+summarised), `GET /api/documents/{id}/chapters` (the reader's table of contents with
+per-chapter summaries), `GET /api/documents/{id}/content` (admin inspection: the
+chapters assembled under their titles as `text/markdown`, 404 until EXTRACTED) and
+`GET /api/documents/{id}/file` (the original PDF as `application/pdf`), and
 `DELETE /api/documents/{id}` (→ 204); `/health` stays
 unprefixed. Each route is thin: parse the request, call the use case, map the
 result to a **`DocumentResponse`** (`id`, `title`, `status`) — the wire shape that
@@ -359,9 +372,10 @@ through the message bus**, issuing a command (`commands.UploadDocument` /
 `DeleteDocument`); `bus.handle()` returns the originating command's result the route
 serializes. The **read routes** (`GET`) instead bypass the bus, calling a `views.*`
 query off the injected `uow_factory` (ADR-015). Most read a Postgres projection
-(the list, the summary); the **content/file viewers** instead read a **blob** off
-the `DocumentStorage` port at the document's `content_key`/`source_key` and stream
-it with an honest content-type — so the read side injects `storage` too (ADR-019).
+(the list, the summary, the chapters); the **content/file viewers** instead read
+**blobs** off the `DocumentStorage` port at the document's `chapter_key(i)`/`source_key`
+— the content view assembling the chapters under their titles — and stream with an
+honest content-type, so the read side injects `storage` too (ADR-019/021).
 Domain failures raised by the handlers are turned into
 responses by the error registry (see "Errors: the domain raises, the entrypoints
 map"). The bus is bootstrapped in `dependencies.py` and injected with `Depends`; the
@@ -461,10 +475,10 @@ when the slice is built test-first (so the ADR reflects real, validated code):
 - **URL ingest** — extraction handles PDFs (see "Extracting a document"); adding a
   web article as a document (trafilatura/Playwright) extends the `DocumentExtractor`
   port when that slice lands. _ADR to follow._
-- **AI summaries (the read experience)** — a single summary per document exists (see
-  "Summarising a document"), map-reduced when it overflows the model's context
-  (ADR-020). Still ahead: **per-chapter** summaries once chapter structure (TOC) and
-  document kind land. Built
+- **AI summaries (the read experience)** — **per-chapter** summaries exist (see
+  "Summarising a document"), each map-reduced when it overflows the model's context
+  (ADR-020); a one-chapter document — an article, or a book with no TOC — collapses to
+  a single summary. Still ahead: document **kind** (book/article). Built
   on top: chat over the document (any source) and, **for articles only (for now)**, a
   generated podcast (script + audio). Mock adapters by default (self-contained); any
   OpenAI-compatible endpoint pluggable (optional Ollama compose profile).
@@ -513,10 +527,11 @@ the code on purpose. Implemented so far:
   removes metadata then the source blob (the mirror of upload's ordering) and raises
   `DocumentNotFound` for an unknown id — both command handlers reached through the bus.
   **`ExtractDocument`**, a command handler issued by the job-queue worker, drives
-  `EXTRACTING → EXTRACTED/FAILED`, storing the extracted Markdown at `content_key`
+  `EXTRACTING → EXTRACTED/FAILED`, splitting the PDF into chapters at its bookmarks and
+  storing each at `chapter_key(i)` with the titles in the `chapters` read model
   (file-first, like upload). **`SummariseDocument`**, the next worker-issued stage,
-  drives `SUMMARISING → SUMMARISED/FAILED`, writing the summary read model in the same
-  transaction as `mark_summarised`.
+  drives `SUMMARISING → SUMMARISED/FAILED`, writing the per-chapter summary read models
+  in the same transaction as `mark_summarised`.
 - The **read side** (`services/views.py`): **`views.list_documents`** returns every
   stored document as the `DocumentView` read model (through the aggregate), and
   **`views.get_document_summary`** serves the summary from the denormalized `summaries`
