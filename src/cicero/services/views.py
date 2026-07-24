@@ -31,6 +31,18 @@ class SummaryView:
     text: str
 
 
+@dataclass(frozen=True)
+class ChapterView:
+    """Read model of one chapter: its position, title, and summary (ADR-021).
+
+    ``summary`` is ``None`` until the chapter has been summarised.
+    """
+
+    index: int
+    title: str
+    summary: str | None
+
+
 async def list_documents(uow_factory: UnitOfWorkFactory) -> list[DocumentView]:
     """Every stored document, as read models. No command, no commit (ADR-015)."""
     async with uow_factory() as uow:
@@ -43,10 +55,31 @@ async def list_documents(uow_factory: UnitOfWorkFactory) -> list[DocumentView]:
 async def get_document_summary(
     uow_factory: UnitOfWorkFactory, document_id: DocumentId
 ) -> SummaryView | None:
-    """A document's summary, or ``None`` if it has none yet (ADR-016)."""
+    """A document's summary for admin inspection — the per-chapter summaries joined
+    in order — or ``None`` if it has none yet (ADR-016/021)."""
     async with uow_factory() as uow:
-        text = await uow.summaries.get(document_id)
-    return SummaryView(text=text) if text is not None else None
+        summaries = await uow.summaries.all(document_id)
+    if not summaries:
+        return None
+    text = "\n\n".join(summaries[index] for index in sorted(summaries))
+    return SummaryView(text=text)
+
+
+async def get_document_chapters(
+    uow_factory: UnitOfWorkFactory, document_id: DocumentId
+) -> list[ChapterView]:
+    """The reader's table of contents zipped with per-chapter summaries (ADR-021).
+
+    Empty when the document has no chapters yet; a chapter's ``summary`` is ``None``
+    until it has been summarised.
+    """
+    async with uow_factory() as uow:
+        titles = await uow.chapters.list(document_id)
+        summaries = await uow.summaries.all(document_id)
+    return [
+        ChapterView(index=index, title=title, summary=summaries.get(index))
+        for index, title in enumerate(titles)
+    ]
 
 
 async def get_document_content(

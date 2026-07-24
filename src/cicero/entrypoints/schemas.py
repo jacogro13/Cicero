@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from cicero.domain.document.document import Document
 from cicero.domain.document.document_status import DocumentStatus
-from cicero.services.views import DocumentView, SummaryView
+from cicero.services.views import ChapterView, DocumentView, SummaryView
 
 
 class DocumentResponse(BaseModel):
@@ -35,3 +35,15 @@ class SummaryResponse(BaseModel):
     @classmethod
     def from_view(cls, view: SummaryView) -> SummaryResponse:
         return cls(text=view.text)
+
+
+class ChapterResponse(BaseModel):
+    """Wire shape of a chapter — the reader's table of contents (ADR-021)."""
+
+    index: int
+    title: str
+    summary: str | None
+
+    @classmethod
+    def from_view(cls, view: ChapterView) -> ChapterResponse:
+        return cls(index=view.index, title=view.title, summary=view.summary)

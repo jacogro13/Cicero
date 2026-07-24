@@ -13,7 +13,11 @@ from cicero.entrypoints.dependencies import (
     get_message_bus,
     get_uow_factory,
 )
-from cicero.entrypoints.schemas import DocumentResponse, SummaryResponse
+from cicero.entrypoints.schemas import (
+    ChapterResponse,
+    DocumentResponse,
+    SummaryResponse,
+)
 from cicero.services import views
 from cicero.services.messagebus import MessageBus
 
@@ -48,6 +52,16 @@ async def get_document_summary(
     if summary is None:
         raise HTTPException(status_code=404, detail="summary not found")
     return SummaryResponse.from_view(summary)
+
+
+@router.get("/{document_id}/chapters", response_model=list[ChapterResponse])
+async def get_document_chapters(
+    document_id: UUID,
+    uow_factory: UnitOfWorkFactory = Depends(get_uow_factory),
+) -> list[ChapterResponse]:
+    """The reader's table of contents with per-chapter summaries (ADR-021)."""
+    chapters = await views.get_document_chapters(uow_factory, DocumentId(document_id))
+    return [ChapterResponse.from_view(chapter) for chapter in chapters]
 
 
 @router.get("/{document_id}/content")

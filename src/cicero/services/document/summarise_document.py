@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 class SummariseDocument:
-    """Handler for ``SummariseDocument``: summarise the extracted text and persist it
-    as a read model, driving SUMMARISING→SUMMARISED/FAILED (ADR-016). The chapters are
-    read from storage and joined; the summary is written in the same transaction as
+    """Handler for ``SummariseDocument``: summarise each chapter from its own stored
+    Markdown and persist the results as a read model, driving SUMMARISING→SUMMARISED/
+    FAILED (ADR-016/021). The summaries are written in the same transaction as
     ``mark_summarised``. Raises ``DocumentNotFound``.
     """
 
@@ -34,8 +34,7 @@ class SummariseDocument:
             await uow.commit()
 
         try:
-            markdown = await self._read_chapters(document, chapter_count)
-            summary = await self._summarizer.summarize(markdown)
+            summaries = await self._summarise_chapters(document, chapter_count)
         except Exception:
             logger.exception("Summarization failed id=%s", document_id)
             await self._mark_failed(document_id, uow)
@@ -45,16 +44,17 @@ class SummariseDocument:
             document = await uow.documents.find_by_id(document_id)
             document.mark_summarised()
             await uow.documents.save(document)
-            await uow.summaries.save(document_id, summary)
+            for index, summary in enumerate(summaries):
+                await uow.summaries.save(document_id, index, summary)
             await uow.commit()
 
-    async def _read_chapters(self, document: Document, count: int) -> str:
-        """The document's chapter Markdown, in order, joined into one string."""
-        parts = [
-            (await self._storage.get(document.chapter_key(index))).decode()
-            for index in range(count)
-        ]
-        return "\n\n".join(parts)
+    async def _summarise_chapters(self, document: Document, count: int) -> list[str]:
+        """Summarise each chapter from its own stored Markdown, in order."""
+        summaries: list[str] = []
+        for index in range(count):
+            markdown = (await self._storage.get(document.chapter_key(index))).decode()
+            summaries.append(await self._summarizer.summarize(markdown))
+        return summaries
 
     async def _mark_failed(self, document_id: DocumentId, uow: UnitOfWork) -> None:
         async with uow:

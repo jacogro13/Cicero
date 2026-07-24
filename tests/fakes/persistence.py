@@ -64,20 +64,26 @@ class InMemoryDocumentRepository(DocumentRepository):
 
 
 class InMemorySummaryReadModel(SummaryReadModel):
-    """Shared summaries dict + a per-transaction write buffer, mirroring the
-    repository's commit/rollback so a summary is visible only once committed."""
+    """Shared per-chapter summaries dict (keyed by document id + chapter index) + a
+    per-transaction write buffer, mirroring the repository's commit/rollback so a
+    summary is visible only once committed."""
 
-    def __init__(self, store: dict[DocumentId, str]) -> None:
+    def __init__(self, store: dict[tuple[DocumentId, int], str]) -> None:
         self._store = store
-        self._pending: dict[DocumentId, str] = {}
+        self._pending: dict[tuple[DocumentId, int], str] = {}
 
-    async def save(self, document_id: DocumentId, text: str) -> None:
-        self._pending[document_id] = text
+    async def save(self, document_id: DocumentId, chapter_index: int, text: str) -> None:
+        self._pending[(document_id, chapter_index)] = text
 
-    async def get(self, document_id: DocumentId) -> str | None:
-        if document_id in self._pending:
-            return self._pending[document_id]
-        return self._store.get(document_id)
+    async def get(self, document_id: DocumentId, chapter_index: int) -> str | None:
+        key = (document_id, chapter_index)
+        if key in self._pending:
+            return self._pending[key]
+        return self._store.get(key)
+
+    async def all(self, document_id: DocumentId) -> dict[int, str]:
+        merged = {**self._store, **self._pending}
+        return {index: text for (owner, index), text in merged.items() if owner == document_id}
 
     def flush(self) -> None:
         self._store.update(self._pending)
@@ -118,7 +124,7 @@ class InMemoryUnitOfWork(UnitOfWork):
         self,
         store: dict[DocumentId, Document],
         chapter_store: dict[DocumentId, list[str]],
-        summary_store: dict[DocumentId, str],
+        summary_store: dict[tuple[DocumentId, int], str],
     ) -> None:
         self.documents = InMemoryDocumentRepository(store)
         self.chapters = InMemoryChapterReadModel(chapter_store)
@@ -159,7 +165,7 @@ def make_in_memory_uow_factory(
     """
     backing_store: dict[DocumentId, Document] = {} if store is None else store
     chapter_store: dict[DocumentId, list[str]] = {}
-    summary_store: dict[DocumentId, str] = {}
+    summary_store: dict[tuple[DocumentId, int], str] = {}
 
     def factory() -> InMemoryUnitOfWork:
         return InMemoryUnitOfWork(backing_store, chapter_store, summary_store)

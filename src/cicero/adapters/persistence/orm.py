@@ -49,12 +49,13 @@ chapters = Table(
     Column("title", String, nullable=False),
 )
 
-# The summaries read model (ADR-016): a denormalized projection, so it is a plain
-# table reached via Core statements — not imperatively mapped onto an aggregate.
+# The summaries read model (ADR-016/021): a denormalized projection of a document's
+# per-chapter summaries — a plain table reached via Core statements, not mapped.
 summaries = Table(
     "summaries",
     metadata,
     Column("document_id", DocumentIdType, primary_key=True),
+    Column("position", Integer, primary_key=True),
     Column("text", String, nullable=False),
 )
 
