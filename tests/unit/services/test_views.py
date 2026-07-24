@@ -46,20 +46,22 @@ class TestListDocuments:
 
 
 class TestGetDocumentSummary:
-    async def test_returns_the_written_summary(self):
-        # The summaries read model is written by the summarisation stage; the view
-        # reads it directly, never re-deriving from the aggregate (ADR-016).
+    async def test_joins_the_chapter_summaries(self):
+        # The admin summary view joins the per-chapter summaries in order (ADR-021),
+        # reading the read model directly, never re-deriving from the aggregate.
         uow_factory = make_in_memory_uow_factory()
         document = Document.create("Clean Code")
         async with uow_factory() as uow:
             await uow.documents.save(document)
-            await uow.summaries.save(document.id, "A crisp summary.")
+            await uow.chapters.save(document.id, ["Intro", "Body"])
+            await uow.summaries.save(document.id, 0, "First.")
+            await uow.summaries.save(document.id, 1, "Second.")
             await uow.commit()
 
         summary = await views.get_document_summary(uow_factory, document.id)
 
         assert isinstance(summary, views.SummaryView)
-        assert summary.text == "A crisp summary."
+        assert summary.text == "First.\n\nSecond."
 
     async def test_returns_none_when_the_document_has_no_summary(self):
         assert (
@@ -67,6 +69,47 @@ class TestGetDocumentSummary:
                 make_in_memory_uow_factory(), DocumentId.new()
             )
             is None
+        )
+
+
+class TestGetDocumentChapters:
+    async def test_returns_each_title_with_its_summary_in_order(self):
+        # The reader's read model: the table of contents zipped with per-chapter
+        # summaries (ADR-021).
+        uow_factory = make_in_memory_uow_factory()
+        document = Document.create("Clean Code")
+        async with uow_factory() as uow:
+            await uow.documents.save(document)
+            await uow.chapters.save(document.id, ["Intro", "Body"])
+            await uow.summaries.save(document.id, 0, "First.")
+            await uow.summaries.save(document.id, 1, "Second.")
+            await uow.commit()
+
+        chapters = await views.get_document_chapters(uow_factory, document.id)
+
+        assert [(c.index, c.title, c.summary) for c in chapters] == [
+            (0, "Intro", "First."),
+            (1, "Body", "Second."),
+        ]
+
+    async def test_summary_is_none_for_a_chapter_not_yet_summarised(self):
+        uow_factory = make_in_memory_uow_factory()
+        document = Document.create("Clean Code")
+        async with uow_factory() as uow:
+            await uow.documents.save(document)
+            await uow.chapters.save(document.id, ["Intro", "Body"])
+            await uow.commit()
+
+        chapters = await views.get_document_chapters(uow_factory, document.id)
+
+        assert [c.summary for c in chapters] == [None, None]
+
+    async def test_returns_an_empty_list_when_the_document_has_no_chapters(self):
+        assert (
+            await views.get_document_chapters(
+                make_in_memory_uow_factory(), DocumentId.new()
+            )
+            == []
         )
 
 

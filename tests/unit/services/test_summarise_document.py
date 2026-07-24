@@ -1,8 +1,10 @@
-"""Summarise a document → the read model — the ``SummariseDocument`` handler (ADR-016).
+"""Summarise a document → per-chapter read models — the ``SummariseDocument`` handler
+(ADR-016/021).
 
-Drives SUMMARISING→SUMMARISED/FAILED with a stub summarizer. The summary is written to
-the summaries read model in the *same* transaction as ``mark_summarised``, so it is
-readable exactly when the document is SUMMARISED. An unknown id raises ``DocumentNotFound``.
+Drives SUMMARISING→SUMMARISED/FAILED with a stub summarizer, summarising each chapter
+from its own stored Markdown. The summaries are written in the *same* transaction as
+``mark_summarised``, so they are readable exactly when the document is SUMMARISED. An
+unknown id raises ``DocumentNotFound``.
 """
 
 import pytest
@@ -22,9 +24,7 @@ from tests.fakes import (
     make_in_memory_uow_factory,
 )
 
-# One chapter, so the joined extracted text the stage feeds the summarizer is just it.
-_CHAPTERS = [Chapter("Clean Code", "# Clean Code\n\nBody.")]
-_EXTRACTED_MARKDOWN = "# Clean Code\n\nBody."
+_CHAPTERS = [Chapter("Intro", "Intro body."), Chapter("Body", "Body text.")]
 
 
 async def _extracted_document(uow_factory, storage):
@@ -48,6 +48,14 @@ async def _summarise(uow_factory, storage, summarizer, document_id):
     )
 
 
+class _EchoSummarizer(StubDocumentSummarizer):
+    """Summarises each chapter to a marker of its own content, so per-chapter
+    routing is observable."""
+
+    async def summarize(self, markdown: str) -> str:
+        return f"summary of: {markdown}"
+
+
 class _ExplodingSummarizer(StubDocumentSummarizer):
     async def summarize(self, markdown: str) -> str:
         raise RuntimeError("summarization failed")
@@ -59,37 +67,26 @@ class TestSummariseDocument:
         storage = InMemoryDocumentStorage()
         document = await _extracted_document(uow_factory, storage)
 
-        await _summarise(
-            uow_factory, storage, StubDocumentSummarizer("A crisp summary."), document.id
-        )
+        await _summarise(uow_factory, storage, StubDocumentSummarizer("s"), document.id)
 
         async with uow_factory() as uow:
             summarised = await uow.documents.find_by_id(document.id)
         assert summarised.status is DocumentStatus.SUMMARISED
 
-    async def test_stores_the_summary_so_the_read_side_can_serve_it(self):
+    async def test_summarises_each_chapter_from_its_own_content(self):
+        # Each chapter is summarised from its own stored Markdown and the results are
+        # served back per chapter, in order (ADR-021).
         uow_factory = make_in_memory_uow_factory()
         storage = InMemoryDocumentStorage()
         document = await _extracted_document(uow_factory, storage)
 
-        await _summarise(
-            uow_factory, storage, StubDocumentSummarizer("A crisp summary."), document.id
-        )
+        await _summarise(uow_factory, storage, _EchoSummarizer(), document.id)
 
-        summary = await views.get_document_summary(uow_factory, document.id)
-        assert summary.text == "A crisp summary."
-
-    async def test_summarizes_the_extracted_markdown(self):
-        # The stub records what it was handed: the stage feeds it the extracted text
-        # (internal, never the source), not the raw upload bytes.
-        uow_factory = make_in_memory_uow_factory()
-        storage = InMemoryDocumentStorage()
-        document = await _extracted_document(uow_factory, storage)
-        summarizer = StubDocumentSummarizer("A crisp summary.")
-
-        await _summarise(uow_factory, storage, summarizer, document.id)
-
-        assert summarizer.received == _EXTRACTED_MARKDOWN
+        chapters = await views.get_document_chapters(uow_factory, document.id)
+        assert [(c.title, c.summary) for c in chapters] == [
+            ("Intro", "summary of: Intro body."),
+            ("Body", "summary of: Body text."),
+        ]
 
     async def test_commits_summarising_before_summarization_runs(self):
         # A spy summarizer reads the persisted status mid-call: it must already be
@@ -108,7 +105,8 @@ class TestSummariseDocument:
 
         await _summarise(uow_factory, storage, _StatusSpySummarizer(), document.id)
 
-        assert seen == [DocumentStatus.SUMMARISING]
+        # One entry per chapter, all observed while already SUMMARISING.
+        assert seen == [DocumentStatus.SUMMARISING, DocumentStatus.SUMMARISING]
 
     async def test_summarization_failure_marks_failed_and_stores_no_summary(self):
         uow_factory = make_in_memory_uow_factory()
@@ -120,7 +118,7 @@ class TestSummariseDocument:
         async with uow_factory() as uow:
             failed = await uow.documents.find_by_id(document.id)
         assert failed.status is DocumentStatus.FAILED
-        # SUMMARISED ⇔ summary readable, so a failure leaves nothing for the reader.
+        # SUMMARISED ⇔ summaries readable, so a failure leaves nothing for the reader.
         assert await views.get_document_summary(uow_factory, document.id) is None
 
     async def test_unknown_id_raises_document_not_found(self):

@@ -133,6 +133,42 @@ class TestDocumentSummary:
         assert response.status_code == 404
 
 
+def _seed_summarised(client: TestClient) -> Document:
+    """Put a SUMMARISED document — chapter titles + per-chapter summaries — into the
+    client's shared read seam, without running the pipeline."""
+    uow_factory = client.app.dependency_overrides[get_uow_factory]()
+
+    async def seed() -> Document:
+        document = Document.create("Clean Code")
+        document.mark_extracting()
+        document.mark_extracted()
+        document.mark_summarising()
+        document.mark_summarised()
+        async with uow_factory() as uow:
+            await uow.documents.save(document)
+            await uow.chapters.save(document.id, ["Intro", "Body"])
+            await uow.summaries.save(document.id, 0, "First.")
+            await uow.summaries.save(document.id, 1, "Second.")
+            await uow.commit()
+        return document
+
+    return asyncio.run(seed())
+
+
+class TestDocumentChapters:
+    def test_serves_the_table_of_contents_with_summaries(self):
+        client = _client()
+        document = _seed_summarised(client)
+
+        response = client.get(f"/api/documents/{document.id.value}/chapters")
+
+        assert response.status_code == 200
+        assert response.json() == [
+            {"index": 0, "title": "Intro", "summary": "First."},
+            {"index": 1, "title": "Body", "summary": "Second."},
+        ]
+
+
 def _seed_extracted(client: TestClient) -> Document:
     """Put an EXTRACTED document + one chapter into the client's shared read seams,
     without running the pipeline."""
