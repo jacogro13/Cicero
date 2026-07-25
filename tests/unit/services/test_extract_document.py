@@ -46,6 +46,23 @@ class _ExplodingExtractor(StubDocumentExtractor):
         raise RuntimeError("extraction failed")
 
 
+class _DeletingExtractor(StubDocumentExtractor):
+    """Simulates a concurrent DELETE landing while extraction runs — the document is
+    gone by the time the stage tries to write its result."""
+
+    def __init__(self, uow_factory, document_id, chapters: list[Chapter]) -> None:
+        super().__init__(chapters)
+        self._uow_factory = uow_factory
+        self._document_id = document_id
+
+    async def extract(self, data: bytes) -> list[Chapter]:
+        async with self._uow_factory() as uow:
+            document = await uow.documents.find_by_id(self._document_id)
+            await uow.documents.delete(document)
+            await uow.commit()
+        return self._chapters
+
+
 class TestExtractDocument:
     async def test_marks_the_document_extracted(self):
         uow_factory = make_in_memory_uow_factory()
@@ -109,6 +126,20 @@ class TestExtractDocument:
             extracted = await uow.documents.find_by_id(document.id)
         assert extracted.status is DocumentStatus.FAILED
         # Only the source blob exists — no orphaned chapter content was written.
+        assert list(storage.objects) == [document.source_key]
+
+    async def test_delete_during_extraction_drops_cleanly(self):
+        # Deleted mid-flight is not an error (ADR-014): the stage must not crash, must
+        # not resurrect the document as EXTRACTED, and must write no orphan chapter blobs.
+        uow_factory = make_in_memory_uow_factory()
+        storage = InMemoryDocumentStorage()
+        document = await _uploaded_document(uow_factory, storage)
+        extractor = _DeletingExtractor(uow_factory, document.id, _CHAPTERS)
+
+        await _extract(uow_factory, storage, extractor, document.id)
+
+        async with uow_factory() as uow:
+            assert await uow.documents.find_by_id(document.id) is None
         assert list(storage.objects) == [document.source_key]
 
     async def test_unknown_id_raises_document_not_found(self):

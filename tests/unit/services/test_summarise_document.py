@@ -121,6 +121,32 @@ class TestSummariseDocument:
         # SUMMARISED ⇔ summaries readable, so a failure leaves nothing for the reader.
         assert await views.get_document_summary(uow_factory, document.id) is None
 
+    async def test_delete_mid_summarisation_stops_early_and_drops(self):
+        # A DELETE lands after the first chapter: the stage must stop before summarising
+        # the rest (bounded wasted work), not crash, not resurrect the document, and
+        # persist no summaries for the deleted document (ADR-014).
+        uow_factory = make_in_memory_uow_factory()
+        storage = InMemoryDocumentStorage()
+        document = await _extracted_document(uow_factory, storage)  # two chapters
+        seen: list[str] = []
+
+        class _DeleteAfterFirstChapter(StubDocumentSummarizer):
+            async def summarize(self, markdown: str) -> str:
+                seen.append(markdown)
+                if len(seen) == 1:
+                    async with uow_factory() as uow:
+                        doc = await uow.documents.find_by_id(document.id)
+                        await uow.documents.delete(doc)
+                        await uow.commit()
+                return "s"
+
+        await _summarise(uow_factory, storage, _DeleteAfterFirstChapter(), document.id)
+
+        assert len(seen) == 1  # the second chapter is never summarised
+        async with uow_factory() as uow:
+            assert await uow.documents.find_by_id(document.id) is None
+        assert await views.get_document_summary(uow_factory, document.id) is None
+
     async def test_unknown_id_raises_document_not_found(self):
         summarise = SummariseDocument(
             InMemoryDocumentStorage(), StubDocumentSummarizer("s")
