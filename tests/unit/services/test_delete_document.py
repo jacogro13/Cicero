@@ -53,6 +53,36 @@ class TestDeleteDocument:
 
         assert document.source_key not in storage.objects
 
+    async def test_deletes_the_chapter_and_summary_projections(self):
+        # A deleted document leaves no orphan read-model rows behind (ADR-015/016/021).
+        uow_factory = make_in_memory_uow_factory()
+        storage = InMemoryDocumentStorage()
+        document = await _stored_document(uow_factory, storage)
+        async with uow_factory() as uow:
+            await uow.chapters.save(document.id, ["Intro", "Body"])
+            await uow.summaries.save(document.id, 0, "Intro summary")
+            await uow.summaries.save(document.id, 1, "Body summary")
+            await uow.commit()
+
+        await _delete(uow_factory, storage, document.id)
+
+        async with uow_factory() as uow:
+            assert await uow.chapters.list(document.id) == []
+            assert await uow.summaries.all(document.id) == {}
+
+    async def test_deletes_every_blob_of_the_document_including_chapters(self):
+        # Not just the source: chapter Markdown blobs (and any orphan from a mid-flight
+        # extraction) share the document's storage prefix and go with it (ADR-004).
+        uow_factory = make_in_memory_uow_factory()
+        storage = InMemoryDocumentStorage()
+        document = await _stored_document(uow_factory, storage)
+        await storage.put(document.chapter_key(0), b"# Intro")
+        await storage.put(document.chapter_key(1), b"# Body")
+
+        await _delete(uow_factory, storage, document.id)
+
+        assert storage.objects == {}
+
     async def test_unknown_id_raises_document_not_found(self):
         with pytest.raises(DocumentNotFound):
             await _delete(make_in_memory_uow_factory(), InMemoryDocumentStorage(), DocumentId.new())
