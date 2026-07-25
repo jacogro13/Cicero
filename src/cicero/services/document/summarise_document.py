@@ -34,24 +34,39 @@ class SummariseDocument:
             await uow.commit()
 
         try:
-            summaries = await self._summarise_chapters(document, chapter_count)
+            summaries = await self._summarise_chapters(document, chapter_count, uow)
         except Exception:
             logger.exception("Summarization failed id=%s", document_id)
             await self._mark_failed(document_id, uow)
             return
 
+        # Deleted mid-summarisation? Dropping a stale stage is not an error (ADR-014).
+        if summaries is None:
+            logger.info("Document deleted during summarisation; dropping id=%s", document_id)
+            return
+
         async with uow:
             document = await uow.documents.find_by_id(document_id)
+            if document is None:
+                logger.info("Document deleted during summarisation; dropping id=%s", document_id)
+                return
             document.mark_summarised()
             await uow.documents.save(document)
             for index, summary in enumerate(summaries):
                 await uow.summaries.save(document_id, index, summary)
             await uow.commit()
 
-    async def _summarise_chapters(self, document: Document, count: int) -> list[str]:
-        """Summarise each chapter from its own stored Markdown, in order."""
+    async def _summarise_chapters(
+        self, document: Document, count: int, uow: UnitOfWork
+    ) -> list[str] | None:
+        """Summarise each chapter from its own stored Markdown, in order. Returns
+        ``None`` if the document was deleted partway, so no further chapter is
+        summarised — bounding the work wasted on a document that is already gone."""
         summaries: list[str] = []
         for index in range(count):
+            async with uow:
+                if await uow.documents.find_by_id(document.id) is None:
+                    return None
             markdown = (await self._storage.get(document.chapter_key(index))).decode()
             summaries.append(await self._summarizer.summarize(markdown))
         return summaries

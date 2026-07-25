@@ -36,22 +36,38 @@ class ExtractDocument:
         try:
             source = await self._storage.get(document.source_key)
             chapters = await self._extractor.extract(source)
-            # Storage-first (ADR-004): the blobs land before EXTRACTED commits, so an
-            # EXTRACTED document never points at a missing chapter.
-            for index, chapter in enumerate(chapters):
-                await self._storage.put(document.chapter_key(index), chapter.markdown.encode())
         except Exception:
             logger.exception("Extraction failed id=%s", document_id)
             await self._mark(document_id, uow, lambda doc: doc.mark_failed())
             return
 
+        # Deleted while we extracted? Dropping a stale stage is not an error (ADR-014).
+        # Bail before writing any chapter blob, so a deleted document leaves no orphans.
+        if not await self._still_present(document_id, uow):
+            return
+
+        # Storage-first (ADR-004): the blobs land before EXTRACTED commits, so an
+        # EXTRACTED document never points at a missing chapter.
+        for index, chapter in enumerate(chapters):
+            await self._storage.put(document.chapter_key(index), chapter.markdown.encode())
+
         titles = [chapter.title for chapter in chapters]
         async with uow:
             document = await uow.documents.find_by_id(document_id)
+            if document is None:
+                logger.info("Document deleted during extraction; dropping id=%s", document_id)
+                return
             await uow.chapters.save(document_id, titles)
             document.mark_extracted()
             await uow.documents.save(document)
             await uow.commit()
+
+    async def _still_present(self, document_id: DocumentId, uow: UnitOfWork) -> bool:
+        async with uow:
+            present = await uow.documents.find_by_id(document_id) is not None
+        if not present:
+            logger.info("Document deleted during extraction; dropping id=%s", document_id)
+        return present
 
     async def _mark(
         self,
