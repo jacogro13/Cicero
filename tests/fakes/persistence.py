@@ -71,26 +71,44 @@ class InMemorySummaryReadModel(SummaryReadModel):
     def __init__(self, store: dict[tuple[DocumentId, int], str]) -> None:
         self._store = store
         self._pending: dict[tuple[DocumentId, int], str] = {}
+        self._pending_deletes: set[DocumentId] = set()
 
     async def save(self, document_id: DocumentId, chapter_index: int, text: str) -> None:
+        self._pending_deletes.discard(document_id)
         self._pending[(document_id, chapter_index)] = text
+
+    async def delete(self, document_id: DocumentId) -> None:
+        self._pending = {
+            key: text for key, text in self._pending.items() if key[0] != document_id
+        }
+        self._pending_deletes.add(document_id)
 
     async def get(self, document_id: DocumentId, chapter_index: int) -> str | None:
         key = (document_id, chapter_index)
         if key in self._pending:
             return self._pending[key]
+        if document_id in self._pending_deletes:
+            return None
         return self._store.get(key)
 
     async def all(self, document_id: DocumentId) -> dict[int, str]:
-        merged = {**self._store, **self._pending}
+        if document_id in self._pending_deletes:
+            merged = self._pending
+        else:
+            merged = {**self._store, **self._pending}
         return {index: text for (owner, index), text in merged.items() if owner == document_id}
 
     def flush(self) -> None:
+        for document_id in self._pending_deletes:
+            for key in [k for k in self._store if k[0] == document_id]:
+                del self._store[key]
         self._store.update(self._pending)
         self._pending.clear()
+        self._pending_deletes.clear()
 
     def discard(self) -> None:
         self._pending.clear()
+        self._pending_deletes.clear()
 
 
 class InMemoryChapterReadModel(ChapterReadModel):
@@ -100,21 +118,33 @@ class InMemoryChapterReadModel(ChapterReadModel):
     def __init__(self, store: dict[DocumentId, list[str]]) -> None:
         self._store = store
         self._pending: dict[DocumentId, list[str]] = {}
+        self._pending_deletes: set[DocumentId] = set()
 
     async def save(self, document_id: DocumentId, titles: list[str]) -> None:
+        self._pending_deletes.discard(document_id)
         self._pending[document_id] = list(titles)
+
+    async def delete(self, document_id: DocumentId) -> None:
+        self._pending.pop(document_id, None)
+        self._pending_deletes.add(document_id)
 
     async def list(self, document_id: DocumentId) -> list[str]:
         if document_id in self._pending:
             return list(self._pending[document_id])
+        if document_id in self._pending_deletes:
+            return []
         return list(self._store.get(document_id, []))
 
     def flush(self) -> None:
         self._store.update(self._pending)
+        for document_id in self._pending_deletes:
+            self._store.pop(document_id, None)
         self._pending.clear()
+        self._pending_deletes.clear()
 
     def discard(self) -> None:
         self._pending.clear()
+        self._pending_deletes.clear()
 
 
 class InMemoryUnitOfWork(UnitOfWork):

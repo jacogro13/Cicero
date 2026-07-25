@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,3 +45,8 @@ class PostgresSummaryReadModel(SummaryReadModel):
             )
         )
         return {position: text for position, text in rows}
+
+    async def delete(self, document_id: DocumentId) -> None:
+        await self._session.execute(
+            delete(summaries).where(summaries.c.document_id == document_id)
+        )

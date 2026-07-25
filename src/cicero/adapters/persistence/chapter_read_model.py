@@ -38,3 +38,8 @@ class PostgresChapterReadModel(ChapterReadModel):
             .order_by(chapters.c.position)
         )
         return list(titles)
+
+    async def delete(self, document_id: DocumentId) -> None:
+        await self._session.execute(
+            delete(chapters).where(chapters.c.document_id == document_id)
+        )

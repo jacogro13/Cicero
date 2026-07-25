@@ -17,5 +17,9 @@ class InMemoryDocumentStorage(DocumentStorage):
     async def delete(self, key: str) -> None:
         self.objects.pop(key, None)
 
+    async def delete_prefix(self, prefix: str) -> None:
+        for key in [k for k in self.objects if k.startswith(prefix)]:
+            del self.objects[key]
+
     async def get(self, key: str) -> bytes:
         return self.objects[key]

@@ -62,3 +62,15 @@ class S3DocumentStorage(DocumentStorage):
         # S3 delete_object is idempotent: deleting an absent key still succeeds.
         call = partial(self._client.delete_object, Bucket=self._bucket, Key=key)
         await anyio.to_thread.run_sync(call)
+
+    async def delete_prefix(self, prefix: str) -> None:
+        await anyio.to_thread.run_sync(partial(self._delete_prefix_sync, prefix))
+
+    def _delete_prefix_sync(self, prefix: str) -> None:
+        # List, then delete one key at a time: delete_object is portable across S3
+        # backends (ADR-007), where batch delete_objects needs a Content-MD5 header
+        # MinIO rejects. A document holds few blobs, so per-key cost is negligible.
+        paginator = self._client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self._bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                self._client.delete_object(Bucket=self._bucket, Key=obj["Key"])

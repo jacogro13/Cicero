@@ -18,3 +18,8 @@ class ChapterReadModel(ABC):
     async def list(self, document_id: DocumentId) -> list[str]:
         """A document's chapter titles in order, or ``[]`` if it has none."""
         ...
+
+    @abstractmethod
+    async def delete(self, document_id: DocumentId) -> None:
+        """Drop a document's chapter titles — a no-op if it has none."""
+        ...

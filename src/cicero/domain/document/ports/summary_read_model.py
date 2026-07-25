@@ -22,3 +22,8 @@ class SummaryReadModel(ABC):
     async def all(self, document_id: DocumentId) -> dict[int, str]:
         """Every chapter summary of a document, keyed by chapter index."""
         ...
+
+    @abstractmethod
+    async def delete(self, document_id: DocumentId) -> None:
+        """Drop every chapter summary of a document — a no-op if it has none."""
+        ...

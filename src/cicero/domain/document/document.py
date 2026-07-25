@@ -51,6 +51,12 @@ class Document:
         """Storage key for the original source file (ADR-004)."""
         return self._storage_key("source")
 
+    @property
+    def storage_prefix(self) -> str:
+        """Key prefix under which all of a document's blobs live — deleting it removes
+        the source and every chapter blob in one sweep (ADR-004)."""
+        return f"documents/{self.id.value}/"
+
     def chapter_key(self, index: int) -> str:
         """Storage key for a chapter's extracted Markdown — internal, never shown
         to the reader (ADR-021)."""

@@ -18,3 +18,8 @@ class DocumentStorage(ABC):
     async def delete(self, key: str) -> None:
         """Remove the object at ``key``; a no-op if it is absent."""
         ...
+
+    @abstractmethod
+    async def delete_prefix(self, prefix: str) -> None:
+        """Remove every object whose key starts with ``prefix``; a no-op if none do."""
+        ...
