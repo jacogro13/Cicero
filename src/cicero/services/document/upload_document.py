@@ -1,5 +1,6 @@
 from cicero.domain.document import commands
 from cicero.domain.document.document import Document
+from cicero.domain.document.document_kind import DocumentKind
 from cicero.domain.document.ports.document_storage import DocumentStorage
 from cicero.domain.ports.unit_of_work import UnitOfWork
 
@@ -11,7 +12,7 @@ class UploadDocument:
         self._storage = storage
 
     async def __call__(self, command: commands.UploadDocument, uow: UnitOfWork) -> Document:
-        document = Document.create(command.title)
+        document = Document.create(command.title, command.kind or DocumentKind.BOOK)
         await self._storage.put(document.source_key, command.content)
         async with uow:
             await uow.documents.save(document)

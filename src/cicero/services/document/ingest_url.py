@@ -1,5 +1,6 @@
 from cicero.domain.document import commands
 from cicero.domain.document.document import Document
+from cicero.domain.document.document_kind import DocumentKind
 from cicero.domain.ports.unit_of_work import UnitOfWork
 
 
@@ -11,7 +12,7 @@ class IngestUrl:
     """
 
     async def __call__(self, command: commands.IngestUrl, uow: UnitOfWork) -> Document:
-        document = Document.create_from_url(command.url)
+        document = Document.create_from_url(command.url, command.kind or DocumentKind.ARTICLE)
         async with uow:
             await uow.documents.save(document)
             await uow.commit()

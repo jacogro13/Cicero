@@ -43,9 +43,16 @@ class DocumentResponse(BaseModel):
 
 
 class IngestUrlRequest(BaseModel):
-    """Wire shape of a URL ingest (ADR-027): the article's link."""
+    """Wire shape of a URL ingest (ADR-027): the article's link, optional kind override."""
 
     url: str
+    kind: DocumentKind | None = None
+
+
+class UpdateDocumentRequest(BaseModel):
+    """Wire shape of a document correction (ADR-026): the new browsing kind."""
+
+    kind: DocumentKind
 
 
 class SummaryResponse(BaseModel):

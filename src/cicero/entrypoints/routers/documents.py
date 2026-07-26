@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Response, UploadFil
 
 from cicero.domain.document import commands
 from cicero.domain.document.document_id import DocumentId
+from cicero.domain.document.document_kind import DocumentKind
 from cicero.domain.document.ports.document_storage import DocumentStorage
 from cicero.domain.ports.unit_of_work import UnitOfWorkFactory
 from cicero.entrypoints.dependencies import (
@@ -18,6 +19,7 @@ from cicero.entrypoints.schemas import (
     DocumentResponse,
     IngestUrlRequest,
     SummaryResponse,
+    UpdateDocumentRequest,
 )
 from cicero.services import views
 from cicero.services.messagebus import MessageBus
@@ -29,9 +31,12 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 async def create_document(
     file: UploadFile,
     title: str = Form(...),
+    kind: DocumentKind | None = Form(None),
     bus: MessageBus = Depends(get_message_bus),
 ) -> DocumentResponse:
-    command = commands.UploadDocument(title=title, content=await file.read())
+    command = commands.UploadDocument(
+        title=title, content=await file.read(), kind=kind
+    )
     document = await bus.handle(command)
     return DocumentResponse.from_domain(document)
 
@@ -42,7 +47,20 @@ async def ingest_url(
     bus: MessageBus = Depends(get_message_bus),
 ) -> DocumentResponse:
     """Ingest a web article by URL — no file, the link is the source (ADR-027)."""
-    document = await bus.handle(commands.IngestUrl(url=body.url))
+    document = await bus.handle(commands.IngestUrl(url=body.url, kind=body.kind))
+    return DocumentResponse.from_domain(document)
+
+
+@router.patch("/{document_id}", response_model=DocumentResponse)
+async def update_document(
+    document_id: UUID,
+    body: UpdateDocumentRequest,
+    bus: MessageBus = Depends(get_message_bus),
+) -> DocumentResponse:
+    """Correct a document's browsing kind (ADR-026)."""
+    document = await bus.handle(
+        commands.SetDocumentKind(document_id=DocumentId(document_id), kind=body.kind)
+    )
     return DocumentResponse.from_domain(document)
 
 

@@ -33,6 +33,7 @@ from cicero.services.document.advance_document import AdvanceDocument
 from cicero.services.document.delete_document import DeleteDocument
 from cicero.services.document.extract_document import ExtractDocument
 from cicero.services.document.ingest_url import IngestUrl
+from cicero.services.document.set_document_kind import SetDocumentKind
 from cicero.services.document.summarise_document import SummariseDocument
 from cicero.services.document.upload_document import UploadDocument
 from cicero.services.messagebus import MessageBus
@@ -135,6 +136,7 @@ def bootstrap(
         command_handlers={
             commands.UploadDocument: UploadDocument(storage),
             commands.IngestUrl: IngestUrl(),
+            commands.SetDocumentKind: SetDocumentKind(),
             commands.DeleteDocument: DeleteDocument(storage),
             commands.ExtractDocument: ExtractDocument(storage, extractor, article_extractor),
             commands.SummariseDocument: SummariseDocument(storage, summarizer),

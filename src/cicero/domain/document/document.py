@@ -51,11 +51,14 @@ class Document:
         return document
 
     @classmethod
-    def create_from_url(cls, url: str) -> Document:
+    def create_from_url(
+        cls, url: str, kind: DocumentKind = DocumentKind.ARTICLE
+    ) -> Document:
         """Ingest a web article: the link is the source, no blob (ADR-027).
 
         Validates the scheme, derives a starting title from the URL, and enters the
-        same pipeline as an upload (an ARTICLE, raising ``DocumentUploaded``).
+        same pipeline as an upload (raising ``DocumentUploaded``). ``kind`` defaults
+        to ARTICLE for a URL but is overridable (ADR-026).
         """
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
@@ -63,11 +66,16 @@ class Document:
         document = cls(
             id=DocumentId.new(),
             title=_title_from_url(parsed),
-            kind=DocumentKind.ARTICLE,
+            kind=kind,
             source_url=url,
         )
         document.events.append(DocumentUploaded(document_id=document.id))
         return document
+
+    def set_kind(self, kind: DocumentKind) -> None:
+        """Correct the browsing classification — a plain mutation, no event or
+        pipeline effect (ADR-026)."""
+        self.kind = kind
 
     @property
     def source_key(self) -> str:
