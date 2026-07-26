@@ -42,3 +42,26 @@ class TestS3DocumentStorage:
 
     async def test_delete_is_a_no_op_for_a_missing_object(self, storage):
         await storage.delete("documents/never-stored/source")
+
+    async def test_delete_prefix_removes_every_object_under_the_prefix(
+        self, storage, read_object
+    ):
+        await storage.put("documents/doc1/source", b"src")
+        await storage.put("documents/doc1/chapters/0", b"c0")
+        await storage.put("documents/doc1/chapters/1", b"c1")
+        await storage.put("documents/doc2/source", b"other")  # a sibling document
+
+        await storage.delete_prefix("documents/doc1/")
+
+        for key in (
+            "documents/doc1/source",
+            "documents/doc1/chapters/0",
+            "documents/doc1/chapters/1",
+        ):
+            with pytest.raises(ClientError):
+                read_object(key)
+        # Only the targeted prefix is swept — the sibling document is untouched.
+        assert read_object("documents/doc2/source") == b"other"
+
+    async def test_delete_prefix_is_a_no_op_when_nothing_matches(self, storage):
+        await storage.delete_prefix("documents/never-stored/")

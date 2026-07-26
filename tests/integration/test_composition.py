@@ -42,6 +42,10 @@ def live_stack(postgres_url: str, minio_config: dict[str, str], monkeypatch) -> 
     }
     for name, value in env.items():
         monkeypatch.setenv(name, value)
+    # Pin the summarizer to the zero-config mock, so a developer's .env pointing at a
+    # real LLM endpoint does not leak in and make this test depend on that host. An
+    # empty env var overrides the .env value; deleting it would fall back to the file.
+    monkeypatch.setenv("LLM_BASE_URL", "")
     get_settings.cache_clear()
     yield {"bucket": bucket, "minio_config": minio_config}
     get_settings.cache_clear()
