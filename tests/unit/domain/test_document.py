@@ -6,6 +6,7 @@ from cicero.domain.document.document import Document
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.document_kind import DocumentKind
 from cicero.domain.document.document_status import DocumentStatus
+from cicero.domain.document.enrichment_status import EnrichmentStatus
 from cicero.domain.document.events import (
     DocumentProcessingFailed,
     DocumentUploaded,
@@ -205,3 +206,54 @@ class TestDocumentEvents:
         second = Document(id=first.id, title=first.title)
         assert first.events and not second.events
         assert first == second
+
+
+class TestDocumentEnrichment:
+    def test_new_document_is_pending_enrichment(self):
+        # A separate axis from status — a fresh document owes both a summary and
+        # enrichment, tracked independently (ADR-028).
+        doc = Document.create("Any Title")
+        assert doc.enrichment_status is EnrichmentStatus.PENDING
+
+    def test_enrichment_fields_start_empty(self):
+        doc = Document.create("Any Title")
+        assert doc.authors is None
+        assert doc.year is None
+        assert doc.has_cover is False
+
+    def test_cover_key_is_derived_from_identity(self):
+        doc = Document.create("Any Title")
+        assert doc.cover_key == f"documents/{doc.id.value}/cover"
+
+    def test_mark_enriching_transitions_to_enriching(self):
+        doc = Document.create("Any Title")
+        doc.mark_enriching()
+        assert doc.enrichment_status is EnrichmentStatus.ENRICHING
+
+    def test_apply_enrichment_fills_the_metadata(self):
+        doc = Document.create("Any Title")
+        doc.apply_enrichment(authors="Jane Doe", year=1998, has_cover=True)
+        assert doc.authors == "Jane Doe"
+        assert doc.year == 1998
+        assert doc.has_cover is True
+
+    def test_mark_enriched_transitions_to_enriched(self):
+        doc = Document.create("Any Title")
+        doc.mark_enriched()
+        assert doc.enrichment_status is EnrichmentStatus.ENRICHED
+
+    def test_mark_enrichment_failed_transitions_to_failed(self):
+        # Best-effort: a failed enrichment never touches the readability spine.
+        doc = Document.create("Any Title")
+        doc.mark_enrichment_failed()
+        assert doc.enrichment_status is EnrichmentStatus.FAILED
+        assert doc.status is DocumentStatus.UPLOADED
+
+    def test_enrichment_transitions_raise_no_events(self):
+        # The branch is terminal — nothing downstream reacts (ADR-028).
+        doc = Document.create("Any Title")
+        doc.collect_events()  # drop the creation event
+        doc.mark_enriching()
+        doc.apply_enrichment(authors="Jane Doe", year=1998, has_cover=True)
+        doc.mark_enriched()
+        assert doc.events == []
