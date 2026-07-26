@@ -44,8 +44,9 @@ async def test_upgrade_head_builds_the_mapped_schema(postgres_url: str) -> None:
         assert set(metadata.tables) <= tables
         # ADR-021's composite key is present from the baseline, not a later ALTER.
         assert summaries_pk == {"document_id", "position"}
-        # ADR-026's `kind` column is the first real ALTER (0002), reached by upgrade head.
-        assert "kind" in document_columns
+        # ADR-026's `kind` (0002) and ADR-027's `source_url` (0003) are ALTER columns,
+        # both reached by upgrade head.
+        assert {"kind", "source_url"} <= document_columns
     finally:
         async with engine.begin() as conn:
             await conn.run_sync(_reset)

@@ -24,6 +24,7 @@ from cicero.entrypoints.main import create_app
 
 from tests.fakes import (
     InMemoryDocumentStorage,
+    StubArticleExtractor,
     StubDocumentExtractor,
     StubDocumentSummarizer,
     make_in_memory_uow_factory,
@@ -40,6 +41,7 @@ def _client() -> TestClient:
         uow_factory,
         storage,
         StubDocumentExtractor("# Clean Code"),
+        StubArticleExtractor(),
         StubDocumentSummarizer("A crisp summary."),
         JobQueue(),
     )
@@ -77,6 +79,37 @@ class TestCreateDocument:
         body = response.json()
         assert "content_key" not in body
         assert "source_key" not in body
+
+
+class TestIngestUrl:
+    def test_post_url_creates_an_article_and_returns_201(self):
+        client = _client()
+
+        response = client.post(
+            "/api/documents/url",
+            json={"url": "https://example.com/blog/clean-architecture"},
+        )
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["kind"] == "ARTICLE"
+        assert body["status"] == DocumentStatus.UPLOADED.value
+        assert body["source_url"] == "https://example.com/blog/clean-architecture"
+        uuid.UUID(body["id"])
+
+    def test_an_ingested_url_appears_in_the_list(self):
+        client = _client()
+        client.post("/api/documents/url", json={"url": "https://example.com/a"})
+
+        listed = client.get("/api/documents").json()
+        assert [d["kind"] for d in listed] == ["ARTICLE"]
+
+    def test_an_invalid_url_returns_422(self):
+        client = _client()
+
+        response = client.post("/api/documents/url", json={"url": "ftp://example.com/x"})
+
+        assert response.status_code == 422
 
 
 class TestListDocuments:

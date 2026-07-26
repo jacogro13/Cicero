@@ -48,6 +48,25 @@ class TestDocumentPersistenceOnPostgres:
 
         assert fetched.kind is DocumentKind.ARTICLE
 
+    async def test_source_url_round_trips_through_the_column(
+        self, uow_factory: UnitOfWorkFactory
+    ):
+        # A URL document keeps its link; an upload's source_url stays NULL (ADR-027).
+        url_doc = Document.create_from_url("https://example.com/blog/clean-architecture")
+        pdf_doc = Document.create("Clean Code")
+
+        async with uow_factory() as uow:
+            await uow.documents.save(url_doc)
+            await uow.documents.save(pdf_doc)
+            await uow.commit()
+
+        async with uow_factory() as uow:
+            fetched_url = await uow.documents.find_by_id(url_doc.id)
+            fetched_pdf = await uow.documents.find_by_id(pdf_doc.id)
+
+        assert fetched_url.source_url == "https://example.com/blog/clean-architecture"
+        assert fetched_pdf.source_url is None
+
     async def test_find_all_returns_every_committed_document(
         self, uow_factory: UnitOfWorkFactory
     ):

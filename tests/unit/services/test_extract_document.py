@@ -17,6 +17,7 @@ from cicero.services.document.extract_document import ExtractDocument
 
 from tests.fakes import (
     InMemoryDocumentStorage,
+    StubArticleExtractor,
     StubDocumentExtractor,
     make_in_memory_uow_factory,
 )
@@ -36,9 +37,10 @@ async def _uploaded_document(uow_factory, storage):
     return document
 
 
-async def _extract(uow_factory, storage, extractor, document_id):
+async def _extract(uow_factory, storage, extractor, document_id, article_extractor=None):
     command = commands.ExtractDocument(document_id=document_id)
-    await ExtractDocument(storage, extractor)(command, uow_factory())
+    article_extractor = article_extractor or StubArticleExtractor()
+    await ExtractDocument(storage, extractor, article_extractor)(command, uow_factory())
 
 
 class _ExplodingExtractor(StubDocumentExtractor):
@@ -143,10 +145,52 @@ class TestExtractDocument:
         assert list(storage.objects) == [document.source_key]
 
     async def test_unknown_id_raises_document_not_found(self):
-        extract = ExtractDocument(InMemoryDocumentStorage(), StubDocumentExtractor())
+        extract = ExtractDocument(
+            InMemoryDocumentStorage(), StubDocumentExtractor(), StubArticleExtractor()
+        )
 
         with pytest.raises(DocumentNotFound):
             await extract(
                 commands.ExtractDocument(document_id=DocumentId.new()),
                 make_in_memory_uow_factory()(),
             )
+
+
+class TestExtractUrlDocument:
+    """A URL-sourced document is fetched and parsed by the ArticleExtractor into a
+    single chapter — no source blob is read (ADR-027). The branch is on source_url,
+    never on kind (ADR-026)."""
+
+    async def _url_document(self, uow_factory):
+        document = Document.create_from_url("https://example.com/blog/clean-architecture")
+        async with uow_factory() as uow:
+            await uow.documents.save(document)
+            await uow.commit()
+        return document
+
+    async def test_extracts_the_article_as_a_single_chapter(self):
+        uow_factory = make_in_memory_uow_factory()
+        storage = InMemoryDocumentStorage()
+        document = await self._url_document(uow_factory)
+        article = StubArticleExtractor(Chapter("Clean Architecture", "# Clean Architecture\n\nBody."))
+
+        await _extract(uow_factory, storage, StubDocumentExtractor(), document.id, article)
+
+        async with uow_factory() as uow:
+            extracted = await uow.documents.find_by_id(document.id)
+            titles = await uow.chapters.list(document.id)
+        assert extracted.status is DocumentStatus.EXTRACTED
+        assert titles == ["Clean Architecture"]
+        assert await storage.get(document.chapter_key(0)) == b"# Clean Architecture\n\nBody."
+
+    async def test_does_not_read_a_source_blob(self):
+        # A URL document has no source blob; extraction must not touch storage.get
+        # on a missing key. The article extractor is the only source.
+        uow_factory = make_in_memory_uow_factory()
+        storage = InMemoryDocumentStorage()
+        document = await self._url_document(uow_factory)
+
+        await _extract(uow_factory, storage, StubDocumentExtractor(), document.id)
+
+        # Only the extracted chapter blob exists — no source_key was ever written or read.
+        assert list(storage.objects) == [document.chapter_key(0)]

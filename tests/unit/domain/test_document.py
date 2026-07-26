@@ -11,7 +11,10 @@ from cicero.domain.document.events import (
     DocumentUploaded,
     ExtractionCompleted,
 )
-from cicero.domain.document.exceptions import InvalidDocumentTitle
+from cicero.domain.document.exceptions import (
+    InvalidDocumentTitle,
+    InvalidDocumentUrl,
+)
 
 
 class TestDocumentCreate:
@@ -36,6 +39,42 @@ class TestDocumentCreate:
     def test_whitespace_only_title_is_rejected(self):
         with pytest.raises(InvalidDocumentTitle):
             Document.create("   ")
+
+
+class TestDocumentFromUrl:
+    def test_a_url_document_is_an_article(self):
+        doc = Document.create_from_url("https://example.com/blog/clean-architecture")
+        assert doc.kind is DocumentKind.ARTICLE
+
+    def test_the_url_is_kept_as_the_source(self):
+        # No blob to upload — the link is the source the worker later fetches (ADR-027).
+        doc = Document.create_from_url("https://example.com/blog/clean-architecture")
+        assert doc.source_url == "https://example.com/blog/clean-architecture"
+
+    def test_an_uploaded_document_has_no_source_url(self):
+        # The blob path is the discriminator's other branch: source_url is None (ADR-027).
+        assert Document.create("Clean Code").source_url is None
+
+    def test_title_is_derived_from_the_url(self):
+        doc = Document.create_from_url("https://example.com/blog/clean-architecture")
+        assert doc.title == "Clean Architecture"
+
+    def test_title_falls_back_to_the_host_when_there_is_no_path(self):
+        doc = Document.create_from_url("https://example.com/")
+        assert doc.title == "example.com"
+
+    def test_a_url_document_records_an_upload_event(self):
+        # It enters the same pipeline as an upload, so it raises the same event (ADR-011).
+        doc = Document.create_from_url("https://example.com/blog/clean-architecture")
+        assert doc.events == [DocumentUploaded(document_id=doc.id)]
+
+    def test_a_non_http_scheme_is_rejected(self):
+        with pytest.raises(InvalidDocumentUrl):
+            Document.create_from_url("ftp://example.com/file")
+
+    def test_a_url_without_a_host_is_rejected(self):
+        with pytest.raises(InvalidDocumentUrl):
+            Document.create_from_url("https:///no-host")
 
 
 class TestDocumentKind:

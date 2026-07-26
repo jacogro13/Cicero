@@ -17,19 +17,23 @@ from cicero.services.document.advance_document import AdvanceDocument
 from cicero.services import views
 from cicero.services.document.delete_document import DeleteDocument
 from cicero.services.document.extract_document import ExtractDocument
+from cicero.services.document.ingest_url import IngestUrl
 from cicero.services.document.summarise_document import SummariseDocument
 from cicero.services.document.upload_document import UploadDocument
 from cicero.services.messagebus import MessageBus
 
 from tests.fakes import (
     InMemoryDocumentStorage,
+    StubArticleExtractor,
     StubDocumentExtractor,
     StubDocumentSummarizer,
     make_in_memory_uow_factory,
 )
 
 
-def _wire(uow_factory, storage, extractor, summarizer) -> tuple[MessageBus, JobQueue]:
+def _wire(
+    uow_factory, storage, extractor, summarizer, article_extractor=None
+) -> tuple[MessageBus, JobQueue]:
     """The full handler/queue wiring the composition root builds (ADR-011/012/013/014/016).
 
     Both slow stages subscribe the *same* ``AdvanceDocument`` to their completion event,
@@ -37,12 +41,14 @@ def _wire(uow_factory, storage, extractor, summarizer) -> tuple[MessageBus, JobQ
     command (summarization) from its status — one subscription is the whole cost.
     """
     queue = JobQueue()
+    article_extractor = article_extractor or StubArticleExtractor()
     bus = MessageBus(
         uow_factory,
         command_handlers={
             commands.UploadDocument: UploadDocument(storage),
+            commands.IngestUrl: IngestUrl(),
             commands.DeleteDocument: DeleteDocument(storage),
-            commands.ExtractDocument: ExtractDocument(storage, extractor),
+            commands.ExtractDocument: ExtractDocument(storage, extractor, article_extractor),
             commands.SummariseDocument: SummariseDocument(storage, summarizer),
         },
         event_handlers={
@@ -75,5 +81,31 @@ class TestUploadRunsThePipeline:
 
         listed = await views.list_documents(uow_factory)
         assert [d.status for d in listed] == [DocumentStatus.SUMMARISED]
+        summary = await views.get_document_summary(uow_factory, document.id)
+        assert summary.text == "A crisp summary."
+
+
+class TestUrlIngestRunsThePipeline:
+    async def test_ingesting_a_url_drives_the_article_to_summarised(self):
+        # The URL path reuses the whole conveyor: ingest → fetch/parse the article →
+        # summarise, no blob involved (ADR-027). Same pipeline, different source.
+        uow_factory = make_in_memory_uow_factory()
+        bus, queue = _wire(
+            uow_factory,
+            InMemoryDocumentStorage(),
+            StubDocumentExtractor(),
+            StubDocumentSummarizer("A crisp summary."),
+            StubArticleExtractor(Chapter("Clean Architecture", "# Clean Architecture\n\nBody.")),
+        )
+        await queue.start(make_pipeline_consumer(bus, uow_factory))
+
+        document = await bus.handle(
+            commands.IngestUrl(url="https://example.com/blog/clean-architecture")
+        )
+        assert document.status is DocumentStatus.UPLOADED
+
+        await queue.join()
+        await queue.stop()
+
         summary = await views.get_document_summary(uow_factory, document.id)
         assert summary.text == "A crisp summary."
