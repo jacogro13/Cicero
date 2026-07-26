@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Column, Enum, Integer, String, Table, Uuid
+from sqlalchemy import Boolean, Column, Enum, Integer, String, Table, Uuid
 from sqlalchemy.orm import registry
 from sqlalchemy.types import TypeDecorator
 
@@ -14,6 +14,7 @@ from cicero.domain.document.document import Document
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.document_kind import DocumentKind
 from cicero.domain.document.document_status import DocumentStatus
+from cicero.domain.document.enrichment_status import EnrichmentStatus
 
 mapper_registry = registry()
 metadata = mapper_registry.metadata
@@ -49,6 +50,18 @@ documents = Table(
     # The article source for URL documents; NULL for uploads. Drives the extraction
     # branch (ADR-027) — not `kind`, which is browsing-only (ADR-026).
     Column("source_url", String, nullable=True),
+    # The enrichment branch (ADR-028): a best-effort axis independent of `status`.
+    # `enrichment_status` server-defaults PENDING so the ALTER backfills existing
+    # rows; the metadata columns stay NULL/false until a cover/authors/year land.
+    Column(
+        "enrichment_status",
+        Enum(EnrichmentStatus, name="enrichment_status"),
+        nullable=False,
+        server_default=EnrichmentStatus.PENDING.value,
+    ),
+    Column("authors", String, nullable=True),
+    Column("year", Integer, nullable=True),
+    Column("has_cover", Boolean, nullable=False, server_default="false"),
 )
 
 # The chapters read model (ADR-021): a document's ordered chapter titles — its
