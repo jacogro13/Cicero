@@ -6,6 +6,7 @@ Storage goes first, so a failed upload can orphan a blob but never persist a doc
 import pytest
 
 from cicero.domain.document import commands
+from cicero.domain.document.document_kind import DocumentKind
 from cicero.domain.document.document_status import DocumentStatus
 from cicero.services.document.upload_document import UploadDocument
 from cicero.services.messagebus import MessageBus
@@ -48,6 +49,27 @@ class TestUploadDocument:
         async with uow_factory() as uow:
             fetched = await uow.documents.find_by_id(document.id)
         assert fetched == document
+
+    async def test_defaults_to_a_book(self):
+        bus = _bus(make_in_memory_uow_factory(), InMemoryDocumentStorage())
+
+        document = await bus.handle(
+            commands.UploadDocument(title="Clean Code", content=b"%PDF-1.4 bytes")
+        )
+
+        assert document.kind is DocumentKind.BOOK
+
+    async def test_an_explicit_kind_overrides_the_book_default(self):
+        # A PDF is a BOOK by default, but the caller may mark it an ARTICLE (ADR-026).
+        bus = _bus(make_in_memory_uow_factory(), InMemoryDocumentStorage())
+
+        document = await bus.handle(
+            commands.UploadDocument(
+                title="A Paper", content=b"%PDF-1.4 bytes", kind=DocumentKind.ARTICLE
+            )
+        )
+
+        assert document.kind is DocumentKind.ARTICLE
 
     async def test_uploaded_document_starts_in_uploaded_status(self):
         bus = _bus(make_in_memory_uow_factory(), InMemoryDocumentStorage())

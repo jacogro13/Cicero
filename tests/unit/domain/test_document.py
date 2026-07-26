@@ -55,6 +55,11 @@ class TestDocumentFromUrl:
         # The blob path is the discriminator's other branch: source_url is None (ADR-027).
         assert Document.create("Clean Code").source_url is None
 
+    def test_kind_can_be_overridden_at_ingest(self):
+        # The source-derived default (ARTICLE for a URL) is overridable (ADR-026).
+        doc = Document.create_from_url("https://example.com/a", kind=DocumentKind.BOOK)
+        assert doc.kind is DocumentKind.BOOK
+
     def test_title_is_derived_from_the_url(self):
         doc = Document.create_from_url("https://example.com/blog/clean-architecture")
         assert doc.title == "Clean Architecture"
@@ -87,6 +92,17 @@ class TestDocumentKind:
         # URL ingest and overrides pass the derived kind through create.
         doc = Document.create("Some Article", kind=DocumentKind.ARTICLE)
         assert doc.kind is DocumentKind.ARTICLE
+
+    def test_set_kind_corrects_a_misclassification(self):
+        # kind is browsing-only, so correcting it is a plain mutation — no event, no
+        # pipeline effect (ADR-026).
+        doc = Document.create("An Article", kind=DocumentKind.ARTICLE)
+        doc.collect_events()  # drop the creation event
+
+        doc.set_kind(DocumentKind.BOOK)
+
+        assert doc.kind is DocumentKind.BOOK
+        assert doc.events == []
 
     def test_kind_participates_in_equality(self):
         # kind is a plain field, so two documents differing only in kind are not

@@ -45,6 +45,14 @@ class TestIngestUrl:
         assert fetched == document
         assert fetched.source_url == _URL
 
+    async def test_an_explicit_kind_overrides_the_article_default(self):
+        # A URL defaults to ARTICLE, but the caller may mark it a BOOK (ADR-026).
+        document = await _bus(make_in_memory_uow_factory()).handle(
+            commands.IngestUrl(url=_URL, kind=DocumentKind.BOOK)
+        )
+
+        assert document.kind is DocumentKind.BOOK
+
     async def test_an_invalid_url_persists_no_document(self):
         store: dict = {}
         bus = _bus(make_in_memory_uow_factory(store))

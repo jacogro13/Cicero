@@ -69,6 +69,17 @@ class TestCreateDocument:
         assert body["kind"] == "BOOK"  # a PDF upload defaults to BOOK (ADR-026)
         uuid.UUID(body["id"])  # a valid generated id crosses the wire
 
+    def test_kind_can_be_overridden_on_upload(self):
+        client = _client()
+
+        response = client.post(
+            "/api/documents",
+            data={"title": "A Paper", "kind": "ARTICLE"},
+            files={"file": _PDF},
+        )
+
+        assert response.json()["kind"] == "ARTICLE"
+
     def test_response_omits_internal_storage_keys(self):
         client = _client()
 
@@ -104,12 +115,48 @@ class TestIngestUrl:
         listed = client.get("/api/documents").json()
         assert [d["kind"] for d in listed] == ["ARTICLE"]
 
+    def test_kind_can_be_overridden_on_ingest(self):
+        client = _client()
+
+        response = client.post(
+            "/api/documents/url", json={"url": "https://example.com/a", "kind": "BOOK"}
+        )
+
+        assert response.json()["kind"] == "BOOK"
+
     def test_an_invalid_url_returns_422(self):
         client = _client()
 
         response = client.post("/api/documents/url", json={"url": "ftp://example.com/x"})
 
         assert response.status_code == 422
+
+
+class TestUpdateDocumentKind:
+    def test_patch_corrects_the_kind(self):
+        client = _client()
+        created = client.post(
+            "/api/documents", data={"title": "Clean Code"}, files={"file": _PDF}
+        ).json()
+
+        response = client.patch(
+            f"/api/documents/{created['id']}", json={"kind": "ARTICLE"}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["kind"] == "ARTICLE"
+        # and the correction is visible on the read side
+        listed = client.get("/api/documents").json()
+        assert [d["kind"] for d in listed] == ["ARTICLE"]
+
+    def test_patch_unknown_id_returns_404(self):
+        client = _client()
+
+        response = client.patch(
+            f"/api/documents/{uuid.uuid4()}", json={"kind": "ARTICLE"}
+        )
+
+        assert response.status_code == 404
 
 
 class TestListDocuments:
