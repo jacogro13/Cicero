@@ -4,6 +4,11 @@ Split by adapter kind: persistence (repository + Unit of Work), storage, and
 extraction.
 """
 
+from tests.fakes.enrichment import (
+    StubArticleCoverRenderer,
+    StubCoverRenderer,
+    StubMetadataInferer,
+)
 from tests.fakes.extraction import StubArticleExtractor, StubDocumentExtractor
 from tests.fakes.persistence import (
     InMemoryChapterReadModel,
@@ -22,7 +27,10 @@ __all__ = [
     "InMemoryUnitOfWork",
     "make_in_memory_uow_factory",
     "InMemoryDocumentStorage",
+    "StubArticleCoverRenderer",
     "StubArticleExtractor",
+    "StubCoverRenderer",
     "StubDocumentExtractor",
     "StubDocumentSummarizer",
+    "StubMetadataInferer",
 ]
