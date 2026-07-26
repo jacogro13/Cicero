@@ -469,9 +469,12 @@ Upload and delete are admin mutations that invalidate the list. The **reader** l
 library and, per document, navigates chapters by their table of contents
 (`GET /api/documents/{id}/chapters`), reading each chapter's summary as Markdown —
 extracted text stays admin-only. Testing is **pragmatic** — component tests drive the
-flows against a mocked client, no backend-style red→green ceremony. See
-**[ADR-017](adr/017-admin-spa-first-frontend-and-serving-topology.md)** and
-**[ADR-022](adr/022-the-reader-spa-and-the-role-split.md)**.
+flows against a mocked client, no backend-style red→green ceremony — and above them a
+**black-box Playwright layer** (`e2e/`) drives the real compose stack end to end, one
+spec accruing per frontend slice (ADR-025). See
+**[ADR-017](adr/017-admin-spa-first-frontend-and-serving-topology.md)**,
+**[ADR-022](adr/022-the-reader-spa-and-the-role-split.md)**, and
+**[ADR-025](adr/025-end-to-end-tests-with-playwright.md)**.
 
 ## Planned capabilities
 
@@ -568,6 +571,12 @@ the code on purpose. Implemented so far:
   Component-tested against a mocked client (Vitest); a CI node job runs its lint /
   typecheck / tests / build, and a CI image-build job builds the api + web images on
   every PR.
+- The **E2E suite** (the `e2e/` tree): black-box Playwright specs (`make e2e`) that
+  bring up the `docker compose` stack and drive both surfaces through a browser over
+  same-origin `/api` — admin (upload → `SUMMARISED` → summary / extracted / PDF /
+  delete) and reader (library grid → chapter navigation → per-chapter summary) — with
+  the mock summarizer forced for determinism. Run locally with `make e2e` and gated on
+  every PR by a dedicated CI job that cold-builds the stack.
 
 Everything under **Planned** above is direction, not code, yet.
 
@@ -600,3 +609,4 @@ references a decision made later.
 - [ADR-022 — The reader SPA and the reader/admin role split](adr/022-the-reader-spa-and-the-role-split.md)
 - [ADR-023 — Deleting a document mid-pipeline](adr/023-deleting-a-document-mid-pipeline.md)
 - [ADR-024 — Alembic migrations replace startup `create_all`](adr/024-alembic-migrations.md)
+- [ADR-025 — End-to-end tests with Playwright](adr/025-end-to-end-tests-with-playwright.md)
