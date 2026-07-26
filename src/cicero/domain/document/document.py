@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.document_kind import DocumentKind
 from cicero.domain.document.document_status import DocumentStatus
+from cicero.domain.document.enrichment_status import EnrichmentStatus
 from cicero.domain.document.events import (
     DocumentProcessingFailed,
     DocumentUploaded,
@@ -28,6 +29,11 @@ class Document:
     status: DocumentStatus = DocumentStatus.UPLOADED
     kind: DocumentKind = DocumentKind.BOOK
     source_url: str | None = None
+    # The enrichment branch (ADR-028): a best-effort axis independent of ``status``.
+    enrichment_status: EnrichmentStatus = EnrichmentStatus.PENDING
+    authors: str | None = None
+    year: int | None = None
+    has_cover: bool = False
 
     @property
     def events(self) -> list[Event]:
@@ -93,6 +99,12 @@ class Document:
         to the reader (ADR-021)."""
         return self._storage_key(f"chapters/{index}")
 
+    @property
+    def cover_key(self) -> str:
+        """Storage key for the rendered cover image — under the document's prefix,
+        so delete sweeps it (ADR-028)."""
+        return self._storage_key("cover")
+
     def _storage_key(self, name: str) -> str:
         """Object-storage layout, a pure function of identity: ``documents/{id}/{name}``."""
         return f"documents/{self.id.value}/{name}"
@@ -113,6 +125,26 @@ class Document:
     def mark_failed(self) -> None:
         self.status = DocumentStatus.FAILED
         self.events.append(DocumentProcessingFailed(document_id=self.id))
+
+    def mark_enriching(self) -> None:
+        self.enrichment_status = EnrichmentStatus.ENRICHING
+
+    def apply_enrichment(
+        self, *, authors: str | None, year: int | None, has_cover: bool
+    ) -> None:
+        """Fill the browsing metadata — a plain mutation off the readability spine
+        (ADR-028)."""
+        self.authors = authors
+        self.year = year
+        self.has_cover = has_cover
+
+    def mark_enriched(self) -> None:
+        self.enrichment_status = EnrichmentStatus.ENRICHED
+
+    def mark_enrichment_failed(self) -> None:
+        """Best-effort terminal: enrichment failed, but the document stays readable
+        — no event, no touch to ``status`` (ADR-028)."""
+        self.enrichment_status = EnrichmentStatus.FAILED
 
 
 def _title_from_url(parsed) -> str:
