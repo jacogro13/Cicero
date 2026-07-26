@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from cicero.domain.document.document_id import DocumentId
+from cicero.domain.document.document_kind import DocumentKind
 from cicero.domain.document.document_status import DocumentStatus
 from cicero.domain.document.events import (
     DocumentProcessingFailed,
@@ -24,6 +25,7 @@ class Document:
     id: DocumentId
     title: str
     status: DocumentStatus = DocumentStatus.UPLOADED
+    kind: DocumentKind = DocumentKind.BOOK
 
     @property
     def events(self) -> list[Event]:
@@ -39,10 +41,10 @@ class Document:
         return collected
 
     @classmethod
-    def create(cls, title: str) -> Document:
+    def create(cls, title: str, kind: DocumentKind = DocumentKind.BOOK) -> Document:
         if not title.strip():
             raise InvalidDocumentTitle("title must not be empty")
-        document = cls(id=DocumentId.new(), title=title)
+        document = cls(id=DocumentId.new(), title=title, kind=kind)
         document.events.append(DocumentUploaded(document_id=document.id))
         return document
 

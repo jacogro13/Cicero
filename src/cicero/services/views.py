@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from cicero.domain.document.document_id import DocumentId
+from cicero.domain.document.document_kind import DocumentKind
 from cicero.domain.document.document_status import DocumentStatus
 from cicero.domain.document.exceptions import DocumentNotFound
 from cicero.domain.document.ports.document_storage import DocumentStorage
@@ -17,11 +18,12 @@ from cicero.domain.ports.unit_of_work import UnitOfWorkFactory
 
 @dataclass(frozen=True)
 class DocumentView:
-    """Read model of a document: identity, title, pipeline status (ADR-015)."""
+    """Read model of a document: identity, title, status, kind (ADR-015/026)."""
 
     id: DocumentId
     title: str
     status: DocumentStatus
+    kind: DocumentKind
 
 
 @dataclass(frozen=True)
@@ -48,7 +50,8 @@ async def list_documents(uow_factory: UnitOfWorkFactory) -> list[DocumentView]:
     async with uow_factory() as uow:
         documents = await uow.documents.find_all()
     return [
-        DocumentView(id=d.id, title=d.title, status=d.status) for d in documents
+        DocumentView(id=d.id, title=d.title, status=d.status, kind=d.kind)
+        for d in documents
     ]
 
 

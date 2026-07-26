@@ -12,6 +12,7 @@ from sqlalchemy.types import TypeDecorator
 
 from cicero.domain.document.document import Document
 from cicero.domain.document.document_id import DocumentId
+from cicero.domain.document.document_kind import DocumentKind
 from cicero.domain.document.document_status import DocumentStatus
 
 mapper_registry = registry()
@@ -37,6 +38,14 @@ documents = Table(
     Column("id", DocumentIdType, primary_key=True),
     Column("title", String, nullable=False),
     Column("status", Enum(DocumentStatus, name="document_status"), nullable=False),
+    # Browsing classification only (ADR-026); server default backfills the ALTER
+    # and lets a bare INSERT stay legal — the app always sends a value.
+    Column(
+        "kind",
+        Enum(DocumentKind, name="document_kind"),
+        nullable=False,
+        server_default=DocumentKind.BOOK.value,
+    ),
 )
 
 # The chapters read model (ADR-021): a document's ordered chapter titles — its
