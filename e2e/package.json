@@ -1,0 +1,13 @@
+{
+  "name": "cicero-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Black-box Playwright E2E for the Cicero compose stack (ADR-025)",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.0"
+  }
+}

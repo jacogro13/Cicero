@@ -1,6 +1,7 @@
 .git
 .venv
 frontend
+e2e
 **/__pycache__
 **/*.py[cod]
 *.egg-info

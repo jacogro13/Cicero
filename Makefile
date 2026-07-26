@@ -1,4 +1,4 @@
-.PHONY: sync lint test integration dev up down migration \
+.PHONY: sync lint test integration e2e dev up down migration \
         fe-install fe-dev fe-lint fe-test fe-build
 
 sync:                 ## Install dependencies into the uv venv
@@ -12,6 +12,9 @@ test:                 ## Run the fast suite (unit + API; no Docker)
 
 integration:          ## Run integration tests against real infra (needs Docker)
 	uv run pytest tests/integration
+
+e2e:                  ## Run the Playwright E2E suite against the compose stack (needs Docker + Node)
+	cd e2e && npm install && npx playwright install chromium && npx playwright test
 
 up:                   ## Run the whole stack (api + Postgres + MinIO) in Docker
 	docker compose up --build
