@@ -47,8 +47,8 @@ imports the other); the rule is enforced in CI by import-linter.
 | Layer | Responsibility | Status |
 |-------|----------------|--------|
 | `domain/` | Entities, value objects, ports, messages, errors — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`, `Chapter`, the pure `chapter_ranges`; messages `Command`/`Event` + `Upload`/`Extract`/`Summarise`/`Delete` commands, `DocumentEvent` base + `DocumentUploaded`/`ExtractionCompleted`/`DocumentProcessingFailed` events; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`, `DocumentExtractor`, `DocumentSummarizer`, `ChapterReadModel`, `SummaryReadModel`; `DomainError` hierarchy) |
-| `services/` | Command/event handlers + the message bus that routes them, and the read-side `views` that bypass it | **Exists** (`MessageBus`; command handlers `UploadDocument`, `DeleteDocument`, `ExtractDocument`, `SummariseDocument`; the `AdvanceDocument` event handler on `DocumentUploaded`/`ExtractionCompleted`; `views.list_documents`/`get_document_summary`/`get_document_chapters` returning read models) |
-| `adapters/` | Implements domain ports against real infra (DB, object storage, extraction, LLM) | **Exists** (`PostgresDocumentRepository`, `PostgresChapterReadModel`, `PostgresSummaryReadModel`, `SqlAlchemyUnitOfWork`, `S3DocumentStorage`, `PyMuPDFExtractor`, `MockSummarizer` + `OpenAISummarizer`) |
+| `services/` | Command/event handlers + the message bus that routes them, and the read-side `views` that bypass it | **Exists** (`MessageBus`; command handlers `UploadDocument`, `IngestUrl`, `DeleteDocument`, `ExtractDocument`, `SummariseDocument`; the `AdvanceDocument` event handler on `DocumentUploaded`/`ExtractionCompleted`; `views.list_documents`/`get_document_summary`/`get_document_chapters` returning read models) |
+| `adapters/` | Implements domain ports against real infra (DB, object storage, extraction, LLM) | **Exists** (`PostgresDocumentRepository`, `PostgresChapterReadModel`, `PostgresSummaryReadModel`, `SqlAlchemyUnitOfWork`, `S3DocumentStorage`, `PyMuPDFExtractor`, `TrafilaturaArticleExtractor`, `MockSummarizer` + `OpenAISummarizer`) |
 | `entrypoints/` | FastAPI app, routes, schemas, error mapping, the serial job queue, the composition root (settings, engine lifespan, startup provisioning, bus bootstrap) | **Exists** (`GET /health`; `POST`/`GET`/`DELETE /api/documents`, `GET /api/documents/{id}/summary` + `/chapters`; `JobQueue` + the `NEXT_COMMAND` stage table + restart recovery; live wiring over Postgres + S3) |
 
 ## Document lifecycle
@@ -67,12 +67,15 @@ chapter *titles* — the table of contents — in a read model. Neither is lifec
 state, so nothing content-shaped has to be kept in sync on transition. The
 aggregate also carries a **`kind`** (`BOOK`/`ARTICLE`) — a browsing classification
 the reader splits on, derived from the source at ingest and read by no pipeline
-stage (ADR-026). See
+stage (ADR-026) — and a nullable **`source_url`**: set for a web article ingested by
+link, `NULL` for an upload, and the discriminator the extract stage branches on
+(ADR-027). See
 **[ADR-002](adr/002-document-status-state-machine.md)**,
 **[ADR-014](adr/014-status-driven-pipeline-advance.md)**,
 **[ADR-016](adr/016-ai-summaries-and-the-summary-read-model.md)**,
-**[ADR-021](adr/021-chapters-from-the-pdf-table-of-contents.md)**, and
-**[ADR-026](adr/026-document-kind.md)**.
+**[ADR-021](adr/021-chapters-from-the-pdf-table-of-contents.md)**,
+**[ADR-026](adr/026-document-kind.md)**, and
+**[ADR-027](adr/027-url-ingest.md)**.
 
 ```mermaid
 stateDiagram-v2
@@ -250,9 +253,18 @@ EXTRACTED document never points at a missing chapter. Extraction failure commits
 `FAILED` and raises `DocumentProcessingFailed` (status is the outcome channel); an
 unknown id raises `DocumentNotFound`. The real extractor is **`PyMuPDFExtractor`**
 (`pymupdf4llm`, in-process, offloaded to the anyio thread); a stub backs the unit
-tests. See **[ADR-009](adr/009-content-extraction-and-the-extract-document-use-case.md)**,
-**[ADR-012](adr/012-pipeline-as-events.md)**, and
-**[ADR-021](adr/021-chapters-from-the-pdf-table-of-contents.md)**.
+tests.
+
+The **source is chosen by `source_url`, never by `kind`** (ADR-026/027): a URL
+document has no blob, so it is fetched and parsed into a **single article chapter**
+by the **`ArticleExtractor`** port (`TrafilaturaArticleExtractor` — trafilatura on
+the anyio thread), while a blob document takes the PyMuPDF path above. Everything
+after the source step — the chapter blobs, titles, transitions, delete guards, the
+per-chapter summary — is shared, so an article is just a one-chapter document. See
+**[ADR-009](adr/009-content-extraction-and-the-extract-document-use-case.md)**,
+**[ADR-012](adr/012-pipeline-as-events.md)**,
+**[ADR-021](adr/021-chapters-from-the-pdf-table-of-contents.md)**, and
+**[ADR-027](adr/027-url-ingest.md)**.
 
 ```mermaid
 sequenceDiagram
@@ -352,17 +364,19 @@ sequenceDiagram
 ## Errors: the domain raises, the entrypoints map
 
 Domain failures are a small `DomainError` hierarchy (`InvalidDocumentTitle`,
-`DocumentNotFound`) raised where the rule lives; the domain never names an HTTP
-status (ADR-001). A single registry in `entrypoints/errors.py` maps each to a
-response — `InvalidDocumentTitle → 422`, `DocumentNotFound → 404` — so the status
-codes live in one place and an unmapped domain error surfaces as 500 by design.
+`InvalidDocumentUrl`, `DocumentNotFound`) raised where the rule lives; the domain
+never names an HTTP status (ADR-001). A single registry in `entrypoints/errors.py`
+maps each to a response — `InvalidDocumentTitle`/`InvalidDocumentUrl → 422`,
+`DocumentNotFound → 404` — so the status codes live in one place and an unmapped
+domain error surfaces as 500 by design.
 See **[ADR-008](adr/008-domain-exceptions-and-http-error-mapping.md)**.
 
 ## Exposing the use cases over HTTP
 
 The `entrypoints/` layer puts the use cases on the wire. Routes live in an
 `APIRouter` mounted under `/api` — `POST /api/documents` (a `multipart` `title` +
-file upload), `GET /api/documents` (the library list),
+file upload), `POST /api/documents/url` (ingest a web article by link, ADR-027),
+`GET /api/documents` (the library list),
 `GET /api/documents/{id}/summary` (admin: the per-chapter summaries joined, 404 until
 summarised), `GET /api/documents/{id}/chapters` (the reader's table of contents with
 per-chapter summaries), `GET /api/documents/{id}/content` (admin inspection: the
@@ -370,10 +384,11 @@ chapters assembled under their titles as `text/markdown`, 404 until EXTRACTED) a
 `GET /api/documents/{id}/file` (the original PDF as `application/pdf`), and
 `DELETE /api/documents/{id}` (→ 204); `/health` stays
 unprefixed. Each route is thin: parse the request, call the use case, map the
-result to a **`DocumentResponse`** (`id`, `title`, `status`) — the wire shape that
-deliberately omits the internal storage keys and extracted text. **Write routes go
-through the message bus**, issuing a command (`commands.UploadDocument` /
-`DeleteDocument`); `bus.handle()` returns the originating command's result the route
+result to a **`DocumentResponse`** (`id`, `title`, `status`, `kind`, `source_url`) —
+the wire shape that deliberately omits the internal storage keys and extracted text.
+**Write routes go through the message bus**, issuing a command
+(`commands.UploadDocument` / `IngestUrl` / `DeleteDocument`); `bus.handle()` returns
+the originating command's result the route
 serializes. The **read routes** (`GET`) instead bypass the bus, calling a `views.*`
 query off the injected `uow_factory` (ADR-015). Most read a Postgres projection
 (the list, the summary, the chapters); the **content/file viewers** instead read
@@ -414,8 +429,9 @@ process**, builds the real `UnitOfWork` factory and `S3DocumentStorage` from set
 shutdown. On **startup it provisions the infrastructure the adapters assume**:
 `alembic upgrade head` migrates the schema and `ensure_bucket()` ensures the object
 store, both idempotent (Alembic replaced startup `create_all` once the schema began to
-evolve under real data — ADR-024; migration `0002` adds the `kind` column, the first
-real `ALTER`). It then **builds the process-wide message bus**
+evolve under real data — ADR-024; migrations `0002`/`0003` add the `kind` and
+`source_url` columns, the first real `ALTER`s). It then **builds the process-wide
+message bus**
 (`app.state.bus`, the `get_message_bus` seam tests swap wholesale) and **starts the job
 queue**, re-enqueuing any interrupted extraction (ADR-013). The whole thing runs from
 `docker compose up`: Postgres + MinIO + the api, gated on health, zero external
@@ -486,17 +502,13 @@ spec accruing per frontend slice (ADR-025). See
 Each of these is a committed direction; its design decision is recorded in an ADR
 when the slice is built test-first (so the ADR reflects real, validated code):
 
-- **URL ingest** — extraction handles PDFs (see "Extracting a document"); adding a
-  web article as a document (trafilatura/Playwright) extends the `DocumentExtractor`
-  port when that slice lands. _ADR to follow._
 - **AI summaries (the read experience)** — **per-chapter** summaries exist (see
   "Summarising a document"), each map-reduced when it overflows the model's context
   (ADR-020); a one-chapter document — an article, or a book with no TOC — collapses to
-  a single summary. Still ahead: document **kind** (book/article). Built
-  on top: chat over the document (any source) and, **for articles only (for now)**, a
-  generated podcast (script + audio). Mock adapters by default (self-contained); any
-  OpenAI-compatible endpoint pluggable (optional Ollama compose profile).
-  _ADRs to follow with those slices._
+  a single summary. Built on top: chat over the document (any source) and, **for
+  articles only (for now)**, a generated podcast (script + audio). Mock adapters by
+  default (self-contained); any OpenAI-compatible endpoint pluggable (optional Ollama
+  compose profile). _ADRs to follow with those slices._
 - **Reader SPA** — the reading surface exists as an MVP (library + per-chapter TOC
   navigation, summaries read as Markdown; see "The frontends: reader and admin"). Still
   ahead: notes and chat, grown as the thin frontend tail of each read-shaped slice.
@@ -509,12 +521,14 @@ the code on purpose. Implemented so far:
 
 - `GET /health` and the app/CI spine.
 - The HTTP API (the `entrypoints/` layer): `POST /api/documents` (multipart
-  upload), `GET /api/documents` (list), and `DELETE /api/documents/{id}` (204),
-  mapping the domain to a `DocumentResponse`, turning `DomainError`s into HTTP
-  statuses through one registry, and reaching the use cases through the message bus,
-  which tests swap wholesale at the `get_message_bus` seam with a bus wired over fakes.
+  upload), `POST /api/documents/url` (ingest a web article by link), `GET
+  /api/documents` (list), and `DELETE /api/documents/{id}` (204), mapping the domain
+  to a `DocumentResponse`, turning `DomainError`s into HTTP statuses through one
+  registry, and reaching the use cases through the message bus, which tests swap
+  wholesale at the `get_message_bus` seam with a bus wired over fakes.
 - The `Document` aggregate: a generated `DocumentId`, a validated title, the
-  status state machine, and a `kind` (`BOOK`/`ARTICLE`) browsing classification.
+  status state machine, a `kind` (`BOOK`/`ARTICLE`) browsing classification, and a
+  `source_url` (set for URL ingests, `NULL` for uploads).
 - The persistence **ports** (`DocumentRepository`, `UnitOfWork`) with two
   implementations: the in-memory fake for unit tests, and a **Postgres adapter**
   (`adapters/persistence/`, SQLAlchemy + imperative mapping) proven against a real
@@ -523,9 +537,11 @@ the code on purpose. Implemented so far:
   implementations: the in-memory fake for unit tests, and an **S3-compatible adapter**
   (`adapters/storage/`, boto3 in the anyio thread pool) proven against a real MinIO
   container in the `tests/integration/` layer.
-- The extraction **port** (`DocumentExtractor`) with two implementations: a stub
-  for unit tests, and **`PyMuPDFExtractor`** (`adapters/extraction/`, `pymupdf4llm`
-  in-process) proven against a real generated PDF in the `tests/integration/` layer.
+- The extraction **ports** with two implementations each: `DocumentExtractor` (a
+  stub, and **`PyMuPDFExtractor`** — `pymupdf4llm` in-process, proven against a real
+  generated PDF in `tests/integration/`) for blob sources, and `ArticleExtractor`
+  (a stub, and **`TrafilaturaArticleExtractor`** — trafilatura on the anyio thread,
+  its parsing covered offline with stubbed fetch) for URL sources.
 - The summarization **port** (`DocumentSummarizer`) with two implementations: a stub
   for unit tests, and the self-contained **`MockSummarizer`** (`adapters/summarization/`).
 - The **message bus** (the `services/` layer): one `MessageBus.handle()` routes a
@@ -538,13 +554,14 @@ the code on purpose. Implemented so far:
   coupling, and no stage named in a handler.
 - The use cases (the `services/` layer): **`UploadDocument`**, over the
   `DocumentStorage` port — stores the source file then persists the document,
-  file-first so a failure can only orphan a blob; and **`DeleteDocument`**, which
+  file-first so a failure can only orphan a blob; **`IngestUrl`**, which persists a
+  URL as an `ARTICLE` (no blob — the link is the source); and **`DeleteDocument`**, which
   removes metadata then the source blob (the mirror of upload's ordering) and raises
-  `DocumentNotFound` for an unknown id — both command handlers reached through the bus.
+  `DocumentNotFound` for an unknown id — all command handlers reached through the bus.
   **`ExtractDocument`**, a command handler issued by the job-queue worker, drives
-  `EXTRACTING → EXTRACTED/FAILED`, splitting the PDF into chapters at its bookmarks and
-  storing each at `chapter_key(i)` with the titles in the `chapters` read model
-  (file-first, like upload). **`SummariseDocument`**, the next worker-issued stage,
+  `EXTRACTING → EXTRACTED/FAILED`, branching on `source_url` — a blob into TOC chapters,
+  a URL into one fetched article chapter — and storing each at `chapter_key(i)` with the
+  titles in the `chapters` read model (file-first, like upload). **`SummariseDocument`**, the next worker-issued stage,
   drives `SUMMARISING → SUMMARISED/FAILED`, writing the per-chapter summary read models
   in the same transaction as `mark_summarised`.
 - The **read side** (`services/views.py`): **`views.list_documents`** returns every
@@ -616,3 +633,4 @@ references a decision made later.
 - [ADR-024 — Alembic migrations replace startup `create_all`](adr/024-alembic-migrations.md)
 - [ADR-025 — End-to-end tests with Playwright](adr/025-end-to-end-tests-with-playwright.md)
 - [ADR-026 — Documents are classified as Books or Articles](adr/026-document-kind.md)
+- [ADR-027 — Ingesting a web article by URL](adr/027-url-ingest.md)
