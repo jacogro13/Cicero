@@ -1,4 +1,4 @@
-.PHONY: sync lint test integration e2e dev up down migration \
+.PHONY: sync lint test integration e2e e2e-down dev up down migration \
         fe-install fe-dev fe-lint fe-test fe-build
 
 sync:                 ## Install dependencies into the uv venv
@@ -15,6 +15,9 @@ integration:          ## Run integration tests against real infra (needs Docker)
 
 e2e:                  ## Run the Playwright E2E suite against the compose stack (needs Docker + Node)
 	cd e2e && npm install && npx playwright install chromium && npx playwright test
+
+e2e-down:             ## Stop the isolated E2E stack and remove its volumes
+	docker compose -p cicero-e2e --profile e2e down -v
 
 up:                   ## Run the whole stack (api + Postgres + MinIO) in Docker
 	docker compose up --build
