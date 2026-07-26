@@ -17,8 +17,9 @@ reshaped `summaries` (added `position`, made the key composite). Against a fresh
 `create_all` builds the new shape; against a **persistent volume** it left the old
 table untouched, so a running dev stack raised `column summaries.position does not
 exist` — the `/chapters` read 500'd and per-chapter writes could not land. Patching
-dev by hand masked a systemic gap: every further schema-changing stage (#17 kind, #18
-enrichment, #21 vectors) repeats it. The schema now evolves under real data.
+dev by hand masked a systemic gap: every further schema-changing stage — the
+document-kind column, bibliographic enrichment, RAG vectors — repeats it. The
+schema now evolves under real data.
 
 ---
 
@@ -33,7 +34,7 @@ runs migrations to head instead of `create_all`; the bucket step is unchanged. T
 exactly as `orm.py` defines it today. The baseline is not split to re-enact ADR-021's
 reshape: that reshape already shipped in `orm.py`, there is no production history to
 preserve (ADR-010), and inventing a pre-reshape baseline would contradict the code.
-The **first real `ALTER` migration lands with #17** (the `kind` column), for real.
+The **first real `ALTER` migration lands with the `kind` column**, for real.
 
 **`env.py` targets the async engine + `orm.metadata`** as the autogenerate source, so
 a drift between models and migrations is detectable. `start_mappers()` stays the
@@ -47,10 +48,12 @@ head` marks them current; a stale volume is dropped (no data to preserve).
 ## Consequences
 
 - Schema changes are now versioned and forward-migrating; the create-only gap that
-  broke a persistent volume is closed, and #17/#18/#21 each add an ordered migration.
+  broke a persistent volume is closed, and each later schema change adds an ordered
+  migration.
 - `orm.metadata` stays the single schema truth: `0001` mirrors it and `env.py`
   autogenerate diffs against it, so a model change with no migration is caught.
 - Integration tests keep building their throwaway schema from `metadata` directly —
   per-test `create_all`/`drop_all` is isolation, not provisioning, and stays fast; a
   dedicated test proves `upgrade head` builds the same schema.
-- No `ALTER` is demonstrated until #17 — an accepted cost of not faking history.
+- No `ALTER` is demonstrated until the `kind` column — an accepted cost of not
+  faking history.

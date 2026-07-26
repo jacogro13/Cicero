@@ -34,16 +34,16 @@ deterministic canned text — no live LLM, mirroring the CI stance of
 [ADR-018](018-openai-compatible-summarizer-adapter.md). Extraction runs for real
 (PyMuPDF over a committed sample PDF).
 
-**Per-slice accrual.** Every frontend-touching batch from #17 ships at least one
-black-box spec here; this batch backfills all already-shipped flows (admin: upload →
+**Per-slice accrual.** Every frontend-touching change from here on ships at least one
+black-box spec here; this change backfills all already-shipped flows (admin: upload →
 `SUMMARISED` → summary / extracted / PDF / delete; reader: library grid → chapter
-nav → per-chapter summary). This supersedes the end-loaded-E2E plan.
+nav → per-chapter summary). E2E is no longer end-loaded.
 
 **`make e2e` runs it locally; a dedicated CI job gates every PR.** The job (GitHub-hosted
 runner) lets Playwright cold-build the compose stack and run both flows — the full stack
 plus a browser is heavy, so it is its own job beside the unit/integration/frontend/image
-ones, not folded into them. #25 shrinks to *consolidating* the per-slice specs, no longer
-to first wiring E2E into CI.
+ones, not folded into them. A later consolidation pass only *tidies* the accrued
+specs, no longer first-wires E2E into CI.
 
 ---
 
