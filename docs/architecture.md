@@ -408,14 +408,15 @@ Configuration is read once from the environment into **`Settings`** (`pydantic-s
 process**, builds the real `UnitOfWork` factory and `S3DocumentStorage` from settings
 — **retiring the `NotImplementedError` infra seams** — and disposes the engine on
 shutdown. On **startup it provisions the infrastructure the adapters assume**:
-`create_all` for the schema and `ensure_bucket()` for the object store, both
-idempotent (full migrations are deferred while one app owns the schema — ADR-010).
-It then **builds the process-wide message bus** (`app.state.bus`, the `get_message_bus`
-seam tests swap wholesale) and **starts the job queue**, re-enqueuing any interrupted
-extraction (ADR-013). The whole thing runs from `docker compose up`: Postgres + MinIO
-+ the api, gated on health, zero external services. See
-**[ADR-010](adr/010-composition-root-settings-and-startup-provisioning.md)** and
-**[ADR-013](adr/013-serial-job-queue-and-restart-recovery.md)**.
+`alembic upgrade head` migrates the schema and `ensure_bucket()` ensures the object
+store, both idempotent (Alembic replaced startup `create_all` once the schema began to
+evolve under real data — ADR-024). It then **builds the process-wide message bus**
+(`app.state.bus`, the `get_message_bus` seam tests swap wholesale) and **starts the job
+queue**, re-enqueuing any interrupted extraction (ADR-013). The whole thing runs from
+`docker compose up`: Postgres + MinIO + the api, gated on health, zero external
+services. See **[ADR-010](adr/010-composition-root-settings-and-startup-provisioning.md)**,
+**[ADR-013](adr/013-serial-job-queue-and-restart-recovery.md)**, and
+**[ADR-024](adr/024-alembic-migrations.md)**.
 
 ```mermaid
 sequenceDiagram
@@ -425,7 +426,7 @@ sequenceDiagram
     participant S as S3DocumentStorage / MinIO
     participant Q as JobQueue
     L->>D: provision_infrastructure()
-    D->>E: create_schema (create_all, idempotent)
+    D->>E: alembic upgrade head (idempotent)
     D->>S: ensure_bucket (idempotent)
     L->>D: build_message_bus → app.state.bus
     L->>Q: start(worker) + reconcile unfinished
@@ -597,3 +598,5 @@ references a decision made later.
 - [ADR-020 — Map-reduce summarization for oversized documents](adr/020-map-reduce-summarization-for-oversized-documents.md)
 - [ADR-021 — Chapters from the PDF table of contents](adr/021-chapters-from-the-pdf-table-of-contents.md)
 - [ADR-022 — The reader SPA and the reader/admin role split](adr/022-the-reader-spa-and-the-role-split.md)
+- [ADR-023 — Deleting a document mid-pipeline](adr/023-deleting-a-document-mid-pipeline.md)
+- [ADR-024 — Alembic migrations replace startup `create_all`](adr/024-alembic-migrations.md)
