@@ -29,8 +29,9 @@
   }
 }
 
-/* Queued / neutral */
-.badge[data-status="UPLOADED"] {
+/* Queued / neutral — waiting for a stage to start (before extraction or summary) */
+.badge[data-status="UPLOADED"],
+.badge[data-status="EXTRACTED"] {
   color: #475569;
   background: #f1f5f9;
   border-color: #e2e8f0;
@@ -42,13 +43,6 @@
   color: #b45309;
   background: #fffbeb;
   border-color: #fde68a;
-}
-
-/* Intermediate done */
-.badge[data-status="EXTRACTED"] {
-  color: #1d4ed8;
-  background: #eff6ff;
-  border-color: #bfdbfe;
 }
 
 /* Terminal success */
