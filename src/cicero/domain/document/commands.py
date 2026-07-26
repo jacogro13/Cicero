@@ -55,3 +55,13 @@ class SummariseDocument(Command):
     """Summarise a document's extracted text — issued by the job-queue worker (ADR-016)."""
 
     document_id: DocumentId
+
+
+@dataclass(frozen=True)
+class EnrichDocument(Command):
+    """Fill a document's cover/authors/year — issued by the enrichment worker (ADR-028).
+
+    Best-effort and off the readability spine: the enrichment branch's single stage.
+    """
+
+    document_id: DocumentId
