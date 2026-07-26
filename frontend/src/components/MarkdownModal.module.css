@@ -13,18 +13,28 @@
   width: min(40rem, 100%);
   max-height: 80vh;
   overflow-y: auto;
-  padding: 1.5rem;
+  /* No top padding: the sticky header owns the top spacing, so no strip is left
+     above it for scrolling content to peek through. */
+  padding: 0 1.5rem 1.5rem;
   background: #fff;
   border-radius: 14px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
 }
 
 .header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 1rem;
+  /* Span the panel's 1.5rem side padding and cover it with the panel background,
+     so content scrolling underneath never shows past the pinned header. */
+  margin: 0 -1.5rem 1rem;
+  padding: 1.5rem 1.5rem 0.75rem;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .title {
