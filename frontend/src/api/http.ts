@@ -50,5 +50,11 @@ export const http = {
   getText: (path: string) => requestText(path),
   post: <T>(path: string, body: FormData) =>
     request<T>(path, { method: "POST", body }),
+  postJson: <T>(path: string, body: unknown) =>
+    request<T>(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
   delete: (path: string) => request<void>(path, { method: "DELETE" }),
 };

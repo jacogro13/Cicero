@@ -1,4 +1,5 @@
 import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../App";
@@ -17,25 +18,44 @@ beforeEach(() => {
 });
 
 describe("LibraryPage", () => {
-  it("lists documents as cards linking into the reader", async () => {
+  it("shows books by default and links them into the reader", async () => {
     mockedApi.listDocuments.mockResolvedValue([
-      { id: "1", title: "The Odyssey", status: "SUMMARISED" },
-      { id: "2", title: "Draft notes", status: "EXTRACTING" },
+      { id: "1", title: "The Odyssey", status: "SUMMARISED", kind: "BOOK" },
+      { id: "2", title: "A Blog Post", status: "SUMMARISED", kind: "ARTICLE" },
     ]);
 
     renderWithClient(<App />, "/");
 
     const link = await screen.findByRole("link", { name: /The Odyssey/ });
     expect(link).toHaveAttribute("href", "/documents/1");
-    // A still-processing document appears with its status, not as an error.
-    expect(screen.getByText("Extracting")).toBeInTheDocument();
+    // Articles are hidden until the reader switches to them.
+    expect(screen.queryByText("A Blog Post")).not.toBeInTheDocument();
   });
 
-  it("shows an empty state when the library has no documents", async () => {
-    mockedApi.listDocuments.mockResolvedValue([]);
+  it("switches to articles, hiding books", async () => {
+    const user = userEvent.setup();
+    mockedApi.listDocuments.mockResolvedValue([
+      { id: "1", title: "The Odyssey", status: "SUMMARISED", kind: "BOOK" },
+      { id: "2", title: "A Blog Post", status: "SUMMARISED", kind: "ARTICLE" },
+    ]);
+
+    renderWithClient(<App />, "/");
+    await screen.findByText("The Odyssey");
+
+    await user.click(screen.getByRole("button", { name: "Articles" }));
+
+    expect(await screen.findByText("A Blog Post")).toBeInTheDocument();
+    expect(screen.queryByText("The Odyssey")).not.toBeInTheDocument();
+  });
+
+  it("shows a kind-aware empty state", async () => {
+    mockedApi.listDocuments.mockResolvedValue([
+      { id: "2", title: "A Blog Post", status: "SUMMARISED", kind: "ARTICLE" },
+    ]);
 
     renderWithClient(<App />, "/");
 
-    expect(await screen.findByText(/library is empty/i)).toBeInTheDocument();
+    // Only an article exists, so the default Books grid is empty.
+    expect(await screen.findByText("No books yet.")).toBeInTheDocument();
   });
 });

@@ -10,6 +10,35 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
+.switch {
+  flex-basis: 100%;
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 0.2rem;
+  gap: 0.2rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.tab,
+.tabActive {
+  padding: 0.35rem 0.9rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #6b7280;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tabActive {
+  background: #fff;
+  color: #111827;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
 .field {
   display: flex;
   flex-direction: column;

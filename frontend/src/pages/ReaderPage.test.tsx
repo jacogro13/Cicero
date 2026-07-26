@@ -16,7 +16,7 @@ const mockedApi = vi.mocked(api);
 beforeEach(() => {
   vi.clearAllMocks();
   mockedApi.listDocuments.mockResolvedValue([
-    { id: "1", title: "The Odyssey", status: "SUMMARISED" },
+    { id: "1", title: "The Odyssey", status: "SUMMARISED", kind: "BOOK" },
   ]);
 });
 

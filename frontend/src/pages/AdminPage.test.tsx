@@ -13,6 +13,7 @@ vi.mock("../api/documents", async (importOriginal) => {
     ...actual,
     listDocuments: vi.fn(),
     uploadDocument: vi.fn(),
+    ingestUrl: vi.fn(),
     deleteDocument: vi.fn(),
     getSummary: vi.fn(),
     getContent: vi.fn(),
@@ -28,8 +29,8 @@ beforeEach(() => {
 describe("AdminPage", () => {
   it("renders documents and their status from the read side", async () => {
     mockedApi.listDocuments.mockResolvedValue([
-      { id: "1", title: "The Odyssey", status: "SUMMARISED" },
-      { id: "2", title: "Draft notes", status: "EXTRACTING" },
+      { id: "1", title: "The Odyssey", status: "SUMMARISED", kind: "BOOK" },
+      { id: "2", title: "Draft notes", status: "EXTRACTING", kind: "BOOK" },
     ]);
 
     renderWithClient(<App />, "/admin");
@@ -54,6 +55,7 @@ describe("AdminPage", () => {
       id: "3",
       title: "New paper",
       status: "UPLOADED",
+      kind: "BOOK",
     });
 
     renderWithClient(<App />, "/admin");
@@ -71,10 +73,37 @@ describe("AdminPage", () => {
     );
   });
 
+  it("ingests a document by URL", async () => {
+    const user = userEvent.setup();
+    mockedApi.listDocuments.mockResolvedValue([]);
+    mockedApi.ingestUrl.mockResolvedValue({
+      id: "9",
+      title: "example.com",
+      status: "UPLOADED",
+      kind: "ARTICLE",
+    });
+
+    renderWithClient(<App />, "/admin");
+    await screen.findByText(/no documents yet/i);
+
+    await user.click(screen.getByRole("button", { name: "URL" }));
+    await user.type(
+      screen.getByLabelText("URL"),
+      "https://example.com/article",
+    );
+    await user.click(screen.getByRole("button", { name: "Ingest" }));
+
+    await waitFor(() =>
+      expect(mockedApi.ingestUrl).toHaveBeenCalledWith(
+        "https://example.com/article",
+      ),
+    );
+  });
+
   it("deletes a document", async () => {
     const user = userEvent.setup();
     mockedApi.listDocuments.mockResolvedValue([
-      { id: "1", title: "The Odyssey", status: "SUMMARISED" },
+      { id: "1", title: "The Odyssey", status: "SUMMARISED", kind: "BOOK" },
     ]);
     mockedApi.deleteDocument.mockResolvedValue(undefined);
 
@@ -91,7 +120,7 @@ describe("AdminPage", () => {
   it("opens a summary for a summarised document", async () => {
     const user = userEvent.setup();
     mockedApi.listDocuments.mockResolvedValue([
-      { id: "1", title: "The Odyssey", status: "SUMMARISED" },
+      { id: "1", title: "The Odyssey", status: "SUMMARISED", kind: "BOOK" },
     ]);
     mockedApi.getSummary.mockResolvedValue({ text: "A hero sails home." });
 
@@ -107,7 +136,7 @@ describe("AdminPage", () => {
   it("opens the extracted text for an extracted document", async () => {
     const user = userEvent.setup();
     mockedApi.listDocuments.mockResolvedValue([
-      { id: "1", title: "The Odyssey", status: "EXTRACTED" },
+      { id: "1", title: "The Odyssey", status: "EXTRACTED", kind: "BOOK" },
     ]);
     mockedApi.getContent.mockResolvedValue("## Book I\n\nSing to me of the man…");
 
@@ -124,7 +153,7 @@ describe("AdminPage", () => {
 
   it("links to the original PDF for every document", async () => {
     mockedApi.listDocuments.mockResolvedValue([
-      { id: "1", title: "Draft notes", status: "UPLOADED" },
+      { id: "1", title: "Draft notes", status: "UPLOADED", kind: "BOOK" },
     ]);
 
     renderWithClient(<App />, "/admin");
@@ -139,7 +168,7 @@ describe("AdminPage", () => {
   it("renders the summary Markdown as formatted elements, not raw text", async () => {
     const user = userEvent.setup();
     mockedApi.listDocuments.mockResolvedValue([
-      { id: "1", title: "The Odyssey", status: "SUMMARISED" },
+      { id: "1", title: "The Odyssey", status: "SUMMARISED", kind: "BOOK" },
     ]);
     mockedApi.getSummary.mockResolvedValue({
       text: "## Themes\n\n- **Homecoming** and cunning.",

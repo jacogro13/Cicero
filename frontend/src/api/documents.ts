@@ -10,10 +10,16 @@ export type DocumentStatus =
   | "SUMMARISED"
   | "FAILED";
 
+// Mirrors the backend DocumentKind enum (ADR-026): a browsing classification the
+// reader splits Books | Articles on. Derived from the source at ingest; no
+// processing path branches on it.
+export type DocumentKind = "BOOK" | "ARTICLE";
+
 export interface DocumentResponse {
   id: string;
   title: string;
   status: DocumentStatus;
+  kind: DocumentKind;
 }
 
 export interface SummaryResponse {
@@ -58,6 +64,12 @@ export function uploadDocument(
   form.append("title", title);
   form.append("file", file);
   return http.post<DocumentResponse>("/documents", form);
+}
+
+// Ingest a web article by URL (ADR-027): no file, the link is the source. The
+// document is created as an ARTICLE and enters the same pipeline as an upload.
+export function ingestUrl(url: string): Promise<DocumentResponse> {
+  return http.postJson<DocumentResponse>("/documents/url", { url });
 }
 
 export function deleteDocument(id: string): Promise<void> {
