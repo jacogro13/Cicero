@@ -47,7 +47,7 @@ imports the other); the rule is enforced in CI by import-linter.
 | Layer | Responsibility | Status |
 |-------|----------------|--------|
 | `domain/` | Entities, value objects, ports, messages, errors — pure Python, no infra | **Exists** (`Document`, `DocumentId`, `DocumentStatus`, `Chapter`, the pure `chapter_ranges`; messages `Command`/`Event` + `Upload`/`Extract`/`Summarise`/`Delete` commands, `DocumentEvent` base + `DocumentUploaded`/`ExtractionCompleted`/`DocumentProcessingFailed` events; ports `DocumentRepository`, `UnitOfWork`, `DocumentStorage`, `DocumentExtractor`, `DocumentSummarizer`, `ChapterReadModel`, `SummaryReadModel`; `DomainError` hierarchy) |
-| `services/` | Command/event handlers + the message bus that routes them, and the read-side `views` that bypass it | **Exists** (`MessageBus`; command handlers `UploadDocument`, `IngestUrl`, `DeleteDocument`, `ExtractDocument`, `SummariseDocument`; the `AdvanceDocument` event handler on `DocumentUploaded`/`ExtractionCompleted`; `views.list_documents`/`get_document_summary`/`get_document_chapters` returning read models) |
+| `services/` | Command/event handlers + the message bus that routes them, and the read-side `views` that bypass it | **Exists** (`MessageBus`; command handlers `UploadDocument`, `IngestUrl`, `SetDocumentKind`, `DeleteDocument`, `ExtractDocument`, `SummariseDocument`; the `AdvanceDocument` event handler on `DocumentUploaded`/`ExtractionCompleted`; `views.list_documents`/`get_document_summary`/`get_document_chapters` returning read models) |
 | `adapters/` | Implements domain ports against real infra (DB, object storage, extraction, LLM) | **Exists** (`PostgresDocumentRepository`, `PostgresChapterReadModel`, `PostgresSummaryReadModel`, `SqlAlchemyUnitOfWork`, `S3DocumentStorage`, `PyMuPDFExtractor`, `TrafilaturaArticleExtractor`, `MockSummarizer` + `OpenAISummarizer`) |
 | `entrypoints/` | FastAPI app, routes, schemas, error mapping, the serial job queue, the composition root (settings, engine lifespan, startup provisioning, bus bootstrap) | **Exists** (`GET /health`; `POST`/`GET`/`DELETE /api/documents`, `GET /api/documents/{id}/summary` + `/chapters`; `JobQueue` + the `NEXT_COMMAND` stage table + restart recovery; live wiring over Postgres + S3) |
 
@@ -66,8 +66,9 @@ identity-derived keys (`chapter_key(i)`, `source_key`'s twins, always computable
 chapter *titles* — the table of contents — in a read model. Neither is lifecycle
 state, so nothing content-shaped has to be kept in sync on transition. The
 aggregate also carries a **`kind`** (`BOOK`/`ARTICLE`) — a browsing classification
-the reader splits on, derived from the source at ingest and read by no pipeline
-stage (ADR-026) — and a nullable **`source_url`**: set for a web article ingested by
+the reader splits on, derived from the source at ingest (overridable there,
+correctable later via `set_kind`) and read by no pipeline stage (ADR-026) — and a
+nullable **`source_url`**: set for a web article ingested by
 link, `NULL` for an upload, and the discriminator the extract stage branches on
 (ADR-027). See
 **[ADR-002](adr/002-document-status-state-machine.md)**,
@@ -381,14 +382,15 @@ file upload), `POST /api/documents/url` (ingest a web article by link, ADR-027),
 summarised), `GET /api/documents/{id}/chapters` (the reader's table of contents with
 per-chapter summaries), `GET /api/documents/{id}/content` (admin inspection: the
 chapters assembled under their titles as `text/markdown`, 404 until EXTRACTED) and
-`GET /api/documents/{id}/file` (the original PDF as `application/pdf`), and
+`GET /api/documents/{id}/file` (the original PDF as `application/pdf`),
+`PATCH /api/documents/{id}` (correct the browsing `kind`, ADR-026), and
 `DELETE /api/documents/{id}` (→ 204); `/health` stays
 unprefixed. Each route is thin: parse the request, call the use case, map the
 result to a **`DocumentResponse`** (`id`, `title`, `status`, `kind`, `source_url`) —
 the wire shape that deliberately omits the internal storage keys and extracted text.
 **Write routes go through the message bus**, issuing a command
-(`commands.UploadDocument` / `IngestUrl` / `DeleteDocument`); `bus.handle()` returns
-the originating command's result the route
+(`commands.UploadDocument` / `IngestUrl` / `SetDocumentKind` / `DeleteDocument`);
+`bus.handle()` returns the originating command's result the route
 serializes. The **read routes** (`GET`) instead bypass the bus, calling a `views.*`
 query off the injected `uow_factory` (ADR-015). Most read a Postgres projection
 (the list, the summary, the chapters); the **content/file viewers** instead read
@@ -522,10 +524,11 @@ the code on purpose. Implemented so far:
 - `GET /health` and the app/CI spine.
 - The HTTP API (the `entrypoints/` layer): `POST /api/documents` (multipart
   upload), `POST /api/documents/url` (ingest a web article by link), `GET
-  /api/documents` (list), and `DELETE /api/documents/{id}` (204), mapping the domain
-  to a `DocumentResponse`, turning `DomainError`s into HTTP statuses through one
-  registry, and reaching the use cases through the message bus, which tests swap
-  wholesale at the `get_message_bus` seam with a bus wired over fakes.
+  /api/documents` (list), `PATCH /api/documents/{id}` (correct the `kind`), and
+  `DELETE /api/documents/{id}` (204) — the write routes taking an optional `kind`
+  override — mapping the domain to a `DocumentResponse`, turning `DomainError`s into
+  HTTP statuses through one registry, and reaching the use cases through the message
+  bus, which tests swap wholesale at the `get_message_bus` seam with a bus wired over fakes.
 - The `Document` aggregate: a generated `DocumentId`, a validated title, the
   status state machine, a `kind` (`BOOK`/`ARTICLE`) browsing classification, and a
   `source_url` (set for URL ingests, `NULL` for uploads).
@@ -555,8 +558,10 @@ the code on purpose. Implemented so far:
 - The use cases (the `services/` layer): **`UploadDocument`**, over the
   `DocumentStorage` port — stores the source file then persists the document,
   file-first so a failure can only orphan a blob; **`IngestUrl`**, which persists a
-  URL as an `ARTICLE` (no blob — the link is the source); and **`DeleteDocument`**, which
-  removes metadata then the source blob (the mirror of upload's ordering) and raises
+  URL as an `ARTICLE` (no blob — the link is the source) — both taking an optional
+  `kind` override; **`SetDocumentKind`**, a plain persisted mutation correcting the
+  browsing `kind` (no storage, no event); and **`DeleteDocument`**, which removes
+  metadata then the source blob (the mirror of upload's ordering) and raises
   `DocumentNotFound` for an unknown id — all command handlers reached through the bus.
   **`ExtractDocument`**, a command handler issued by the job-queue worker, drives
   `EXTRACTING → EXTRACTED/FAILED`, branching on `source_url` — a blob into TOC chapters,
