@@ -23,9 +23,16 @@ live LLM, regardless of a local `.env`.
 - **reader** (`/`, `/documents/:id`): the library grid lists documents; the reader
   page navigates chapters by the table of contents and renders each per-chapter
   summary.
+- **url-ingest** (`/admin` → `/`): ingest a web article by URL through the admin URL
+  tab → poll to `SUMMARISED` → read it under the reader's **Articles** tab.
 
 The sample PDF (`fixtures/sample.pdf`) carries a two-bookmark table of contents, so
-extraction yields the "Alpha" and "Beta" chapters the reader navigates.
+extraction yields the "Alpha" and "Beta" chapters the reader navigates. The URL spec
+fetches `fixtures/article.html`, served **inside the compose network** by the
+`article-fixture` service — brought up by the `e2e` compose profile (which Playwright
+activates), so the fetch is real yet self-contained, with no live internet. A normal
+`docker compose up` never starts that service; if you reuse a stack you started
+yourself, bring it up with `docker compose --profile e2e up`.
 
 A dedicated CI job runs this same suite on every PR (it lets Playwright cold-build the
 compose stack on a GitHub-hosted runner), so E2E gates merges as well as local runs.

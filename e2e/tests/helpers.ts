@@ -24,6 +24,37 @@ interface DocumentResponse {
   id: string;
   title: string;
   status: string;
+  kind: string;
+  source_url: string | null;
+}
+
+// The self-contained article the compose `article-fixture` service serves (ADR-027):
+// reachable only inside the compose network, which is where the api fetches it. A
+// per-run query string makes each ingest's source_url unique on a persistent volume.
+export const uniqueArticleUrl = () =>
+  `http://article-fixture/article.html?run=${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+
+// Find the ingested document over the public /api contract, by the source_url the
+// admin form submitted — the URL path/title is shared across runs, source_url is not.
+export async function findDocumentBySourceUrl(
+  request: APIRequestContext,
+  sourceUrl: string,
+): Promise<DocumentResponse> {
+  let match: DocumentResponse | undefined;
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get("/api/documents");
+        const docs = (await response.json()) as DocumentResponse[];
+        match = docs.find((doc) => doc.source_url === sourceUrl);
+        return match !== undefined;
+      },
+      { timeout: 30_000, intervals: [500] },
+    )
+    .toBe(true);
+  return match!;
 }
 
 // Upload straight over the public /api contract (still black-box) — used to seed

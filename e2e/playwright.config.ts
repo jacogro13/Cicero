@@ -26,9 +26,10 @@ export default defineConfig({
   ],
   // Bring the whole stack up from the repo root (reusing one already running),
   // forcing the mock summarizer so summaries are deterministic regardless of a
-  // local .env pointing LLM_BASE_URL at a real endpoint.
+  // local .env pointing LLM_BASE_URL at a real endpoint. The `e2e` profile adds the
+  // `article-fixture` service the URL-ingest spec fetches (ADR-027).
   webServer: {
-    command: "docker compose up --build",
+    command: "docker compose --profile e2e up --build",
     cwd: "..",
     // Probe the proxied API, not the static shell: nginx serves the SPA the moment
     // it starts, but the api is still building + running startup migrations behind

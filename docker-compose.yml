@@ -85,3 +85,13 @@ services:
     ports:
       - "${WEB_HOST_PORT:-5173}:80"
     networks: [cicero]
+
+  # E2E-only (ADR-027): serves a static article so the URL-ingest spec has a real,
+  # self-contained page for the api to fetch at http://article-fixture/article.html.
+  # Gated behind the `e2e` profile, so a normal `docker compose up` never starts it.
+  article-fixture:
+    image: nginx:alpine
+    profiles: [e2e]
+    volumes:
+      - ./e2e/fixtures/article.html:/usr/share/nginx/html/article.html:ro
+    networks: [cicero]

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Hexagonal Architecture in Practice</title>
+    <meta
+      name="description"
+      content="Why ports and adapters keep a codebase testable and durable."
+    />
+  </head>
+  <body>
+    <article>
+      <h1>Hexagonal Architecture in Practice</h1>
+      <p>
+        Hexagonal architecture, also called ports and adapters, organises a
+        system into concentric layers with dependencies pointing only inward
+        toward the domain. The business rules at the core know nothing of the
+        frameworks, databases, or transports that surround them.
+      </p>
+      <p>
+        Each capability the domain needs from the outside world is expressed as
+        a port — a small interface owned by the domain. Concrete adapters
+        implement those ports against real infrastructure: a database, an object
+        store, a web client. Because the domain depends on the interface and not
+        the implementation, the same code runs against a fake in a unit test and
+        a real service in production.
+      </p>
+      <p>
+        The payoff is testability. The core can be exercised in memory, quickly
+        and deterministically, without spinning up a database or a message
+        broker. Slow, awkward dependencies are pushed to the edges where a
+        handful of integration tests cover the adapters that actually touch
+        them.
+      </p>
+      <p>
+        Durability follows from the same discipline. When a framework falls out
+        of fashion or a database is swapped, only the adapters change; the rules
+        that make the application worth writing stay put. The architecture buys
+        the freedom to defer and revise infrastructure decisions.
+      </p>
+    </article>
+  </body>
+</html>
