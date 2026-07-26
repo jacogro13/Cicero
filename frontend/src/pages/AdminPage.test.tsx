@@ -2,13 +2,13 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { App } from "./App";
-import * as api from "./api/documents";
-import { renderWithClient } from "./test-utils";
+import { App } from "../App";
+import * as api from "../api/documents";
+import { renderWithClient } from "../test-utils";
 
 // Mock only the network calls; keep isPending (the polling predicate) real.
-vi.mock("./api/documents", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./api/documents")>();
+vi.mock("../api/documents", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/documents")>();
   return {
     ...actual,
     listDocuments: vi.fn(),
@@ -25,14 +25,14 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("App", () => {
+describe("AdminPage", () => {
   it("renders documents and their status from the read side", async () => {
     mockedApi.listDocuments.mockResolvedValue([
       { id: "1", title: "The Odyssey", status: "SUMMARISED" },
       { id: "2", title: "Draft notes", status: "EXTRACTING" },
     ]);
 
-    renderWithClient(<App />);
+    renderWithClient(<App />, "/admin");
 
     expect(await screen.findByText("The Odyssey")).toBeInTheDocument();
     expect(screen.getByText("Summarised")).toBeInTheDocument();
@@ -42,7 +42,7 @@ describe("App", () => {
   it("shows an empty state when there are no documents", async () => {
     mockedApi.listDocuments.mockResolvedValue([]);
 
-    renderWithClient(<App />);
+    renderWithClient(<App />, "/admin");
 
     expect(await screen.findByText(/no documents yet/i)).toBeInTheDocument();
   });
@@ -56,7 +56,7 @@ describe("App", () => {
       status: "UPLOADED",
     });
 
-    renderWithClient(<App />);
+    renderWithClient(<App />, "/admin");
     await screen.findByText(/no documents yet/i);
 
     await user.type(screen.getByLabelText("Title"), "New paper");
@@ -78,7 +78,7 @@ describe("App", () => {
     ]);
     mockedApi.deleteDocument.mockResolvedValue(undefined);
 
-    renderWithClient(<App />);
+    renderWithClient(<App />, "/admin");
     await screen.findByText("The Odyssey");
 
     await user.click(screen.getByRole("button", { name: "Delete" }));
@@ -95,7 +95,7 @@ describe("App", () => {
     ]);
     mockedApi.getSummary.mockResolvedValue({ text: "A hero sails home." });
 
-    renderWithClient(<App />);
+    renderWithClient(<App />, "/admin");
     await screen.findByText("The Odyssey");
 
     await user.click(screen.getByRole("button", { name: "View summary" }));
@@ -111,7 +111,7 @@ describe("App", () => {
     ]);
     mockedApi.getContent.mockResolvedValue("## Book I\n\nSing to me of the man…");
 
-    renderWithClient(<App />);
+    renderWithClient(<App />, "/admin");
     await screen.findByText("The Odyssey");
 
     await user.click(screen.getByRole("button", { name: "View extracted" }));
@@ -127,7 +127,7 @@ describe("App", () => {
       { id: "1", title: "Draft notes", status: "UPLOADED" },
     ]);
 
-    renderWithClient(<App />);
+    renderWithClient(<App />, "/admin");
     await screen.findByText("Draft notes");
 
     expect(screen.getByRole("link", { name: "View PDF" })).toHaveAttribute(
@@ -145,7 +145,7 @@ describe("App", () => {
       text: "## Themes\n\n- **Homecoming** and cunning.",
     });
 
-    renderWithClient(<App />);
+    renderWithClient(<App />, "/admin");
     await screen.findByText("The Odyssey");
     await user.click(screen.getByRole("button", { name: "View summary" }));
 

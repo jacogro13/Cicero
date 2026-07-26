@@ -20,6 +20,14 @@ export interface SummaryResponse {
   text: string;
 }
 
+// One entry of the reader's table of contents (ADR-021): a chapter's position,
+// its title, and its summary — null until the chapter has been summarised.
+export interface ChapterResponse {
+  index: number;
+  title: string;
+  summary: string | null;
+}
+
 // A document is still moving through the pipeline until it reaches a terminal
 // status; the list polls (ADR-017) while any document is pending.
 const TERMINAL: ReadonlySet<DocumentStatus> = new Set(["SUMMARISED", "FAILED"]);
@@ -58,6 +66,11 @@ export function deleteDocument(id: string): Promise<void> {
 
 export function getSummary(id: string): Promise<SummaryResponse> {
   return http.get<SummaryResponse>(`/documents/${id}/summary`);
+}
+
+// The reader's table of contents with per-chapter summaries (ADR-021).
+export function getChapters(id: string): Promise<ChapterResponse[]> {
+  return http.get<ChapterResponse[]>(`/documents/${id}/chapters`);
 }
 
 // The extracted Markdown, served raw as text/markdown (ADR-019).

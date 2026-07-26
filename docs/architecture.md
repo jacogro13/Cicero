@@ -434,23 +434,26 @@ sequenceDiagram
     L->>D: dispose_engine() on shutdown
 ```
 
-## The admin SPA: the first frontend
+## The frontends: reader and admin
 
-The first user-facing surface is an **admin SPA** — upload a document, watch it move
-`UPLOADED → … → SUMMARISED`, list, delete, and read the result. It lives in a separate
-**`frontend/` tree, outside the hexagon**: React + TypeScript built by Vite, tested
-with Vitest + Testing Library, styled with CSS Modules. import-linter governs the
-Python layers only; the frontend carries its own toolchain and its own CI node job.
+Two user-facing surfaces split **by role**: the **reader** — the daily-use read
+experience, at the root `/` — and the **admin console** at `/admin` (upload, list,
+delete, inspect the raw extraction). They share one **`frontend/` tree, outside the
+hexagon**: React + TypeScript built by Vite, tested with Vitest + Testing Library,
+styled with CSS Modules, routed by react-router. The split is **by route, not by build
+artifact** — one bundle, one client, one CI node job; import-linter governs the Python
+layers only. A hardened boundary (auth, perhaps a separate deploy) is a later decision.
 
-It talks to the backend over **same-origin `/api`**, never a cross-origin call. In
+Both talk to the backend over **same-origin `/api`**, never a cross-origin call. In
 development the Vite dev server proxies `/api` to the api on `:8000`; in production a
 dedicated **`web` (nginx) compose service** serves the built bundle and reverse-proxies
 `/api` to the api — so the api image stays decoupled from the frontend build and no
-CORS config is needed. `docker compose up` now brings the UI up with the stack.
+CORS config is needed. nginx serves the app shell for any non-file route, so deep links
+(`/documents/:id`) survive a refresh. `docker compose up` brings the UI up with the stack.
 
 ```mermaid
 flowchart LR
-    B["Browser<br/>admin SPA"]
+    B["Browser<br/>reader / · admin /admin"]
     W["web (nginx)<br/>serves dist · proxies /api"]
     A["api (FastAPI)"]
     B -->|same-origin /api| W
@@ -459,13 +462,15 @@ flowchart LR
 
 **Server state runs through TanStack Query.** The document list is a polled query — it
 refetches while any document is still non-terminal and goes idle once every document is
-`SUMMARISED`/`FAILED`, the client-side stand-in for the still-deferred push channel.
-Upload and delete are mutations that invalidate the list, so a new document appears and
-starts polling (and a deleted one drops) with no manual refetching; the summary is read
-on demand from `GET /api/documents/{id}/summary`. Testing is **pragmatic** — component
-tests drive the flows (render, upload, list-refresh, delete, view summary) against a
-mocked client, no backend-style red→green ceremony. See
-**[ADR-017](adr/017-admin-spa-first-frontend-and-serving-topology.md)**.
+`SUMMARISED`/`FAILED`, the client-side stand-in for the still-deferred push channel;
+the reader's chapter view polls the same way while any chapter awaits its summary.
+Upload and delete are admin mutations that invalidate the list. The **reader** lists the
+library and, per document, navigates chapters by their table of contents
+(`GET /api/documents/{id}/chapters`), reading each chapter's summary as Markdown —
+extracted text stays admin-only. Testing is **pragmatic** — component tests drive the
+flows against a mocked client, no backend-style red→green ceremony. See
+**[ADR-017](adr/017-admin-spa-first-frontend-and-serving-topology.md)** and
+**[ADR-022](adr/022-the-reader-spa-and-the-role-split.md)**.
 
 ## Planned capabilities
 
@@ -483,9 +488,10 @@ when the slice is built test-first (so the ADR reflects real, validated code):
   generated podcast (script + audio). Mock adapters by default (self-contained); any
   OpenAI-compatible endpoint pluggable (optional Ollama compose profile).
   _ADRs to follow with those slices._
-- **Reader SPA** — the daily-use reading surface (read summaries, TOC navigation,
-  notes, chat), grown as the thin frontend tail of each read-shaped slice. The admin
-  SPA already exists (see "The admin SPA: the first frontend"). _ADRs to follow._
+- **Reader SPA** — the reading surface exists as an MVP (library + per-chapter TOC
+  navigation, summaries read as Markdown; see "The frontends: reader and admin"). Still
+  ahead: notes and chat, grown as the thin frontend tail of each read-shaped slice.
+  _ADRs to follow with those slices._
 
 ## What exists today
 
@@ -551,13 +557,16 @@ the code on purpose. Implemented so far:
   starts the job queue at startup — so `docker compose up` (api + Postgres + MinIO)
   runs the app end to end, proven by an integration test driving the live stack with
   no `dependency_overrides`.
-- The **admin SPA** (the `frontend/` tree): React + TypeScript on Vite, served in
-  production by an nginx **`web`** compose service that also reverse-proxies same-origin
-  `/api` (a Vite proxy mirrors it in development). It uploads, lists — polling the
-  pipeline through TanStack Query until every document is terminal — deletes, and reads
-  a document's summary, consuming the read side over `/api`. Component-tested against a
-  mocked client (Vitest); a CI node job runs its lint / typecheck / tests / build, and a
-  CI image-build job builds the api + web images on every PR.
+- The **frontends** (the `frontend/` tree): React + TypeScript on Vite, react-router
+  splitting two role-based surfaces served by one nginx **`web`** compose service that
+  also reverse-proxies same-origin `/api` (a Vite proxy mirrors it in development). The
+  **admin console** (`/admin`) uploads, lists — polling the pipeline through TanStack
+  Query until every document is terminal — deletes, and inspects the raw extraction. The
+  **reader** (`/`) lists the library and reads per-chapter summaries navigated by the
+  table of contents (`/api/documents/{id}/chapters`), extracted text staying admin-only.
+  Component-tested against a mocked client (Vitest); a CI node job runs its lint /
+  typecheck / tests / build, and a CI image-build job builds the api + web images on
+  every PR.
 
 Everything under **Planned** above is direction, not code, yet.
 
@@ -586,3 +595,5 @@ references a decision made later.
 - [ADR-018 — Real summarizer adapter: OpenAI-compatible, config-selected](adr/018-openai-compatible-summarizer-adapter.md)
 - [ADR-019 — Admin content viewers: storage-backed reads](adr/019-admin-content-viewers-and-storage-backed-reads.md)
 - [ADR-020 — Map-reduce summarization for oversized documents](adr/020-map-reduce-summarization-for-oversized-documents.md)
+- [ADR-021 — Chapters from the PDF table of contents](adr/021-chapters-from-the-pdf-table-of-contents.md)
+- [ADR-022 — The reader SPA and the reader/admin role split](adr/022-the-reader-spa-and-the-role-split.md)
