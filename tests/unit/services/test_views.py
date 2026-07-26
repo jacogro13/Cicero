@@ -30,6 +30,19 @@ class TestListDocuments:
             (second.id, "Refactoring", DocumentStatus.UPLOADED),
         }
 
+    async def test_carries_the_document_kind(self):
+        # The read model surfaces kind so the reader can split Books | Articles (ADR-026).
+        uow_factory = make_in_memory_uow_factory()
+        from cicero.domain.document.document_kind import DocumentKind
+
+        async with uow_factory() as uow:
+            await uow.documents.save(Document.create("An Article", kind=DocumentKind.ARTICLE))
+            await uow.commit()
+
+        [view] = await views.list_documents(uow_factory)
+
+        assert view.kind is DocumentKind.ARTICLE
+
     async def test_returns_read_dtos_not_aggregates(self):
         uow_factory = make_in_memory_uow_factory()
         async with uow_factory() as uow:

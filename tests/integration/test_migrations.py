@@ -21,11 +21,12 @@ def _reset(conn: Connection) -> None:
     conn.execute(text("DROP TYPE IF EXISTS document_status"))
 
 
-def _reflect(conn: Connection) -> tuple[set[str], set[str]]:
+def _reflect(conn: Connection) -> tuple[set[str], set[str], set[str]]:
     inspector = inspect(conn)
     tables = set(inspector.get_table_names())
     summaries_pk = inspector.get_pk_constraint("summaries")["constrained_columns"]
-    return tables, set(summaries_pk)
+    document_columns = {col["name"] for col in inspector.get_columns("documents")}
+    return tables, set(summaries_pk), document_columns
 
 
 async def test_upgrade_head_builds_the_mapped_schema(postgres_url: str) -> None:
@@ -38,11 +39,13 @@ async def test_upgrade_head_builds_the_mapped_schema(postgres_url: str) -> None:
         await anyio.to_thread.run_sync(upgrade_to_head, postgres_url)
 
         async with engine.connect() as conn:
-            tables, summaries_pk = await conn.run_sync(_reflect)
+            tables, summaries_pk, document_columns = await conn.run_sync(_reflect)
 
         assert set(metadata.tables) <= tables
         # ADR-021's composite key is present from the baseline, not a later ALTER.
         assert summaries_pk == {"document_id", "position"}
+        # ADR-026's `kind` column is the first real ALTER (0002), reached by upgrade head.
+        assert "kind" in document_columns
     finally:
         async with engine.begin() as conn:
             await conn.run_sync(_reset)

@@ -8,6 +8,7 @@ import pytest
 
 from cicero.domain.document.document import Document
 from cicero.domain.document.document_id import DocumentId
+from cicero.domain.document.document_kind import DocumentKind
 from cicero.domain.ports.unit_of_work import UnitOfWorkFactory
 
 
@@ -31,6 +32,21 @@ class TestDocumentPersistenceOnPostgres:
     ):
         async with uow_factory() as uow:
             assert await uow.documents.find_by_id(DocumentId.new()) is None
+
+    async def test_kind_round_trips_through_the_column(
+        self, uow_factory: UnitOfWorkFactory
+    ):
+        # The `kind` column persists and reloads (ADR-026); an ARTICLE stays an ARTICLE.
+        article = Document.create("An Article", kind=DocumentKind.ARTICLE)
+
+        async with uow_factory() as uow:
+            await uow.documents.save(article)
+            await uow.commit()
+
+        async with uow_factory() as uow:
+            fetched = await uow.documents.find_by_id(article.id)
+
+        assert fetched.kind is DocumentKind.ARTICLE
 
     async def test_find_all_returns_every_committed_document(
         self, uow_factory: UnitOfWorkFactory

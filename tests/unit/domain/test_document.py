@@ -4,6 +4,7 @@ import pytest
 
 from cicero.domain.document.document import Document
 from cicero.domain.document.document_id import DocumentId
+from cicero.domain.document.document_kind import DocumentKind
 from cicero.domain.document.document_status import DocumentStatus
 from cicero.domain.document.events import (
     DocumentProcessingFailed,
@@ -35,6 +36,25 @@ class TestDocumentCreate:
     def test_whitespace_only_title_is_rejected(self):
         with pytest.raises(InvalidDocumentTitle):
             Document.create("   ")
+
+
+class TestDocumentKind:
+    def test_new_document_is_a_book_by_default(self):
+        # PDF uploads are books; the default is BOOK so upload need not say so (ADR-026).
+        doc = Document.create("Clean Code")
+        assert doc.kind is DocumentKind.BOOK
+
+    def test_create_accepts_an_explicit_kind(self):
+        # URL ingest and overrides pass the derived kind through create.
+        doc = Document.create("Some Article", kind=DocumentKind.ARTICLE)
+        assert doc.kind is DocumentKind.ARTICLE
+
+    def test_kind_participates_in_equality(self):
+        # kind is a plain field, so two documents differing only in kind are not
+        # equal — a persisted-vs-loaded compare stays honest (ADR-026).
+        book = Document.create("Same Title")
+        article = Document(id=book.id, title=book.title, kind=DocumentKind.ARTICLE)
+        assert book != article
 
 
 class TestDocumentStatusLifecycle:

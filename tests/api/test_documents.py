@@ -64,6 +64,7 @@ class TestCreateDocument:
         body = response.json()
         assert body["title"] == "Clean Code"
         assert body["status"] == DocumentStatus.UPLOADED.value
+        assert body["kind"] == "BOOK"  # a PDF upload defaults to BOOK (ADR-026)
         uuid.UUID(body["id"])  # a valid generated id crosses the wire
 
     def test_response_omits_internal_storage_keys(self):
