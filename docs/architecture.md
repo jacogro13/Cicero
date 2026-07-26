@@ -64,11 +64,15 @@ never shown to the reader — exists from EXTRACTED onwards; the per-chapter sum
 the read experience, from SUMMARISED. Chapter *content* lives in object storage at
 identity-derived keys (`chapter_key(i)`, `source_key`'s twins, always computable); the
 chapter *titles* — the table of contents — in a read model. Neither is lifecycle
-state, so nothing content-shaped has to be kept in sync on transition. See
+state, so nothing content-shaped has to be kept in sync on transition. The
+aggregate also carries a **`kind`** (`BOOK`/`ARTICLE`) — a browsing classification
+the reader splits on, derived from the source at ingest and read by no pipeline
+stage (ADR-026). See
 **[ADR-002](adr/002-document-status-state-machine.md)**,
 **[ADR-014](adr/014-status-driven-pipeline-advance.md)**,
-**[ADR-016](adr/016-ai-summaries-and-the-summary-read-model.md)**, and
-**[ADR-021](adr/021-chapters-from-the-pdf-table-of-contents.md)**.
+**[ADR-016](adr/016-ai-summaries-and-the-summary-read-model.md)**,
+**[ADR-021](adr/021-chapters-from-the-pdf-table-of-contents.md)**, and
+**[ADR-026](adr/026-document-kind.md)**.
 
 ```mermaid
 stateDiagram-v2
@@ -410,7 +414,8 @@ process**, builds the real `UnitOfWork` factory and `S3DocumentStorage` from set
 shutdown. On **startup it provisions the infrastructure the adapters assume**:
 `alembic upgrade head` migrates the schema and `ensure_bucket()` ensures the object
 store, both idempotent (Alembic replaced startup `create_all` once the schema began to
-evolve under real data — ADR-024). It then **builds the process-wide message bus**
+evolve under real data — ADR-024; migration `0002` adds the `kind` column, the first
+real `ALTER`). It then **builds the process-wide message bus**
 (`app.state.bus`, the `get_message_bus` seam tests swap wholesale) and **starts the job
 queue**, re-enqueuing any interrupted extraction (ADR-013). The whole thing runs from
 `docker compose up`: Postgres + MinIO + the api, gated on health, zero external
@@ -508,8 +513,8 @@ the code on purpose. Implemented so far:
   mapping the domain to a `DocumentResponse`, turning `DomainError`s into HTTP
   statuses through one registry, and reaching the use cases through the message bus,
   which tests swap wholesale at the `get_message_bus` seam with a bus wired over fakes.
-- The `Document` aggregate: a generated `DocumentId`, a validated title, and the
-  status state machine.
+- The `Document` aggregate: a generated `DocumentId`, a validated title, the
+  status state machine, and a `kind` (`BOOK`/`ARTICLE`) browsing classification.
 - The persistence **ports** (`DocumentRepository`, `UnitOfWork`) with two
   implementations: the in-memory fake for unit tests, and a **Postgres adapter**
   (`adapters/persistence/`, SQLAlchemy + imperative mapping) proven against a real
@@ -610,3 +615,4 @@ references a decision made later.
 - [ADR-023 — Deleting a document mid-pipeline](adr/023-deleting-a-document-mid-pipeline.md)
 - [ADR-024 — Alembic migrations replace startup `create_all`](adr/024-alembic-migrations.md)
 - [ADR-025 — End-to-end tests with Playwright](adr/025-end-to-end-tests-with-playwright.md)
+- [ADR-026 — Documents are classified as Books or Articles](adr/026-document-kind.md)
