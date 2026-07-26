@@ -461,8 +461,8 @@ sequenceDiagram
 ## The frontends: reader and admin
 
 Two user-facing surfaces split **by role**: the **reader** — the daily-use read
-experience, at the root `/` — and the **admin console** at `/admin` (upload, list,
-delete, inspect the raw extraction). They share one **`frontend/` tree, outside the
+experience, at the root `/` — and the **admin console** at `/admin` (ingest a PDF
+upload or a web-article URL, list, delete, inspect the raw extraction). They share one **`frontend/` tree, outside the
 hexagon**: React + TypeScript built by Vite, tested with Vitest + Testing Library,
 styled with CSS Modules, routed by react-router. The split is **by route, not by build
 artifact** — one bundle, one client, one CI node job; import-linter governs the Python
@@ -488,10 +488,11 @@ flowchart LR
 refetches while any document is still non-terminal and goes idle once every document is
 `SUMMARISED`/`FAILED`, the client-side stand-in for the still-deferred push channel;
 the reader's chapter view polls the same way while any chapter awaits its summary.
-Upload and delete are admin mutations that invalidate the list. The **reader** lists the
-library and, per document, navigates chapters by their table of contents
-(`GET /api/documents/{id}/chapters`), reading each chapter's summary as Markdown —
-extracted text stays admin-only. Testing is **pragmatic** — component tests drive the
+Upload, URL ingest, and delete are admin mutations that invalidate the list. The **reader** lists the
+library behind a **Books | Articles switch** that scopes the grid to one `kind`
+(defaulting to Books, ADR-026) and, per document, navigates chapters by their table of
+contents (`GET /api/documents/{id}/chapters`), reading each chapter's summary as
+Markdown — extracted text stays admin-only. Testing is **pragmatic** — component tests drive the
 flows against a mocked client, no backend-style red→green ceremony — and above them a
 **black-box Playwright layer** (`e2e/`) drives the real compose stack end to end, one
 spec accruing per frontend slice (ADR-025). See
@@ -511,10 +512,10 @@ when the slice is built test-first (so the ADR reflects real, validated code):
   articles only (for now)**, a generated podcast (script + audio). Mock adapters by
   default (self-contained); any OpenAI-compatible endpoint pluggable (optional Ollama
   compose profile). _ADRs to follow with those slices._
-- **Reader SPA** — the reading surface exists as an MVP (library + per-chapter TOC
-  navigation, summaries read as Markdown; see "The frontends: reader and admin"). Still
-  ahead: notes and chat, grown as the thin frontend tail of each read-shaped slice.
-  _ADRs to follow with those slices._
+- **Reader SPA** — the reading surface exists as an MVP (library behind a Books |
+  Articles switch + per-chapter TOC navigation, summaries read as Markdown; see "The
+  frontends: reader and admin"). Still ahead: notes and chat, grown as the thin
+  frontend tail of each read-shaped slice. _ADRs to follow with those slices._
 
 ## What exists today
 
