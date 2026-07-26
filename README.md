@@ -115,6 +115,7 @@ make sync          # install dependencies
 make lint          # check the hexagonal layering (import-linter)
 make test          # fast suite — unit + API, no Docker
 make integration   # integration tests against real Postgres + MinIO (needs Docker)
+make e2e           # black-box Playwright E2E through the compose stack (needs Docker + Node)
 make dev           # run the app on the host (needs Postgres + MinIO; see .env.example)
 ```
 
