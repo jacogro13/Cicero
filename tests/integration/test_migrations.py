@@ -19,6 +19,7 @@ def _reset(conn: Connection) -> None:
     for table in reversed(metadata.sorted_tables):
         conn.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
     conn.execute(text("DROP TYPE IF EXISTS document_status"))
+    conn.execute(text("DROP TYPE IF EXISTS enrichment_status"))
 
 
 def _reflect(conn: Connection) -> tuple[set[str], set[str], set[str]]:
@@ -44,9 +45,10 @@ async def test_upgrade_head_builds_the_mapped_schema(postgres_url: str) -> None:
         assert set(metadata.tables) <= tables
         # ADR-021's composite key is present from the baseline, not a later ALTER.
         assert summaries_pk == {"document_id", "position"}
-        # ADR-026's `kind` (0002) and ADR-027's `source_url` (0003) are ALTER columns,
-        # both reached by upgrade head.
+        # ADR-026's `kind` (0002), ADR-027's `source_url` (0003), and ADR-028's
+        # enrichment columns (0004) are ALTER columns, all reached by upgrade head.
         assert {"kind", "source_url"} <= document_columns
+        assert {"enrichment_status", "authors", "year", "has_cover"} <= document_columns
     finally:
         async with engine.begin() as conn:
             await conn.run_sync(_reset)

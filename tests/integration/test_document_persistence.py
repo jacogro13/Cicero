@@ -9,6 +9,7 @@ import pytest
 from cicero.domain.document.document import Document
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.document_kind import DocumentKind
+from cicero.domain.document.enrichment_status import EnrichmentStatus
 from cicero.domain.ports.unit_of_work import UnitOfWorkFactory
 
 
@@ -66,6 +67,45 @@ class TestDocumentPersistenceOnPostgres:
 
         assert fetched_url.source_url == "https://example.com/blog/clean-architecture"
         assert fetched_pdf.source_url is None
+
+    async def test_enrichment_round_trips_through_the_columns(
+        self, uow_factory: UnitOfWorkFactory
+    ):
+        # The enrichment axis persists independently of status (ADR-028): authors,
+        # year, has_cover, and the enrichment status all reload.
+        doc = Document.create("Domain-Driven Design")
+        doc.apply_enrichment(authors="Eric Evans", year=2003, has_cover=True)
+        doc.mark_enriched()
+
+        async with uow_factory() as uow:
+            await uow.documents.save(doc)
+            await uow.commit()
+
+        async with uow_factory() as uow:
+            fetched = await uow.documents.find_by_id(doc.id)
+
+        assert fetched.authors == "Eric Evans"
+        assert fetched.year == 2003
+        assert fetched.has_cover is True
+        assert fetched.enrichment_status is EnrichmentStatus.ENRICHED
+
+    async def test_a_fresh_document_defaults_to_pending_enrichment(
+        self, uow_factory: UnitOfWorkFactory
+    ):
+        # The server default backfills the ALTER and a bare INSERT (ADR-028).
+        doc = Document.create("Clean Code")
+
+        async with uow_factory() as uow:
+            await uow.documents.save(doc)
+            await uow.commit()
+
+        async with uow_factory() as uow:
+            fetched = await uow.documents.find_by_id(doc.id)
+
+        assert fetched.enrichment_status is EnrichmentStatus.PENDING
+        assert fetched.authors is None
+        assert fetched.year is None
+        assert fetched.has_cover is False
 
     async def test_find_all_returns_every_committed_document(
         self, uow_factory: UnitOfWorkFactory
