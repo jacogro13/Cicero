@@ -1,6 +1,21 @@
 import { expect, test } from "@playwright/test";
 
-import { uniqueTitle, uploadDocument, waitForSummarised } from "./helpers";
+import {
+  deleteDocument,
+  uniqueTitle,
+  uploadDocument,
+  waitForSummarised,
+} from "./helpers";
+
+// The document this spec seeds; the afterEach deletes it so it never outlives the run.
+let createdId: string | undefined;
+
+test.afterEach(async ({ request }) => {
+  if (createdId) {
+    await deleteDocument(request, createdId);
+    createdId = undefined;
+  }
+});
 
 // The reader (ADR-021/022): the daily read experience. One journey covers both
 // shipped surfaces — the library grid lists the document, and its page navigates
@@ -12,6 +27,7 @@ test("library grid → chapter navigation → per-chapter summary", async ({
 }) => {
   const title = uniqueTitle("Reader E2E");
   const id = await uploadDocument(request, title);
+  createdId = id;
   await waitForSummarised(request, id);
 
   // The library grid lists the document as a card into the reader.

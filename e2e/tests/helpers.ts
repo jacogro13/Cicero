@@ -71,6 +71,17 @@ export async function uploadDocument(
   return doc.id;
 }
 
+// Tear a document down over the public /api contract (still black-box) — specs that
+// seed via /api clean up the same way in an afterEach, so no E2E document outlives its
+// run even on the isolated stack (ADR-025). Mirrors the admin spec's UI delete.
+export async function deleteDocument(
+  request: APIRequestContext,
+  id: string,
+): Promise<void> {
+  const response = await request.delete(`/api/documents/${id}`);
+  expect(response.status()).toBe(204);
+}
+
 // Poll the read side until the document is summarised — the pipeline is serial,
 // so this is upload → extract → summarise completing behind the single worker.
 export async function waitForSummarised(

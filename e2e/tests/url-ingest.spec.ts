@@ -1,10 +1,21 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  deleteDocument,
   findDocumentBySourceUrl,
   uniqueArticleUrl,
   waitForSummarised,
 } from "./helpers";
+
+// The article this spec ingests; the afterEach deletes it so it never outlives the run.
+let createdId: string | undefined;
+
+test.afterEach(async ({ request }) => {
+  if (createdId) {
+    await deleteDocument(request, createdId);
+    createdId = undefined;
+  }
+});
 
 // URL ingest (ADR-027): ingest a web article through the admin URL tab, watch the
 // same pipeline carry it to a summary, then read it under the reader's Articles tab
@@ -25,6 +36,7 @@ test("admin URL ingest → summarised → reader Articles tab", async ({
   // The document arrives as an ARTICLE over the public contract; then wait out the
   // pipeline — a real fetch of the fixture page → extract → mock summary.
   const doc = await findDocumentBySourceUrl(request, url);
+  createdId = doc.id;
   expect(doc.kind).toBe("ARTICLE");
   await waitForSummarised(request, doc.id);
 
