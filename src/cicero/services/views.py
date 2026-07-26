@@ -18,12 +18,13 @@ from cicero.domain.ports.unit_of_work import UnitOfWorkFactory
 
 @dataclass(frozen=True)
 class DocumentView:
-    """Read model of a document: identity, title, status, kind (ADR-015/026)."""
+    """Read model of a document: identity, title, status, kind, source (ADR-015/026/027)."""
 
     id: DocumentId
     title: str
     status: DocumentStatus
     kind: DocumentKind
+    source_url: str | None
 
 
 @dataclass(frozen=True)
@@ -50,7 +51,9 @@ async def list_documents(uow_factory: UnitOfWorkFactory) -> list[DocumentView]:
     async with uow_factory() as uow:
         documents = await uow.documents.find_all()
     return [
-        DocumentView(id=d.id, title=d.title, status=d.status, kind=d.kind)
+        DocumentView(
+            id=d.id, title=d.title, status=d.status, kind=d.kind, source_url=d.source_url
+        )
         for d in documents
     ]
 

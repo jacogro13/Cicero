@@ -46,6 +46,9 @@ documents = Table(
         nullable=False,
         server_default=DocumentKind.BOOK.value,
     ),
+    # The article source for URL documents; NULL for uploads. Drives the extraction
+    # branch (ADR-027) — not `kind`, which is browsing-only (ADR-026).
+    Column("source_url", String, nullable=True),
 )
 
 # The chapters read model (ADR-021): a document's ordered chapter titles — its

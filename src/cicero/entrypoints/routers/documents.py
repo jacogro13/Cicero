@@ -16,6 +16,7 @@ from cicero.entrypoints.dependencies import (
 from cicero.entrypoints.schemas import (
     ChapterResponse,
     DocumentResponse,
+    IngestUrlRequest,
     SummaryResponse,
 )
 from cicero.services import views
@@ -32,6 +33,16 @@ async def create_document(
 ) -> DocumentResponse:
     command = commands.UploadDocument(title=title, content=await file.read())
     document = await bus.handle(command)
+    return DocumentResponse.from_domain(document)
+
+
+@router.post("/url", response_model=DocumentResponse, status_code=201)
+async def ingest_url(
+    body: IngestUrlRequest,
+    bus: MessageBus = Depends(get_message_bus),
+) -> DocumentResponse:
+    """Ingest a web article by URL — no file, the link is the source (ADR-027)."""
+    document = await bus.handle(commands.IngestUrl(url=body.url))
     return DocumentResponse.from_domain(document)
 
 

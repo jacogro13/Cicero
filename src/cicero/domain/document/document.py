@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.document_kind import DocumentKind
@@ -10,7 +11,7 @@ from cicero.domain.document.events import (
     DocumentUploaded,
     ExtractionCompleted,
 )
-from cicero.domain.document.exceptions import InvalidDocumentTitle
+from cicero.domain.document.exceptions import InvalidDocumentTitle, InvalidDocumentUrl
 from cicero.domain.messages import Event
 
 
@@ -26,6 +27,7 @@ class Document:
     title: str
     status: DocumentStatus = DocumentStatus.UPLOADED
     kind: DocumentKind = DocumentKind.BOOK
+    source_url: str | None = None
 
     @property
     def events(self) -> list[Event]:
@@ -45,6 +47,25 @@ class Document:
         if not title.strip():
             raise InvalidDocumentTitle("title must not be empty")
         document = cls(id=DocumentId.new(), title=title, kind=kind)
+        document.events.append(DocumentUploaded(document_id=document.id))
+        return document
+
+    @classmethod
+    def create_from_url(cls, url: str) -> Document:
+        """Ingest a web article: the link is the source, no blob (ADR-027).
+
+        Validates the scheme, derives a starting title from the URL, and enters the
+        same pipeline as an upload (an ARTICLE, raising ``DocumentUploaded``).
+        """
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise InvalidDocumentUrl(f"not an http(s) URL: {url!r}")
+        document = cls(
+            id=DocumentId.new(),
+            title=_title_from_url(parsed),
+            kind=DocumentKind.ARTICLE,
+            source_url=url,
+        )
         document.events.append(DocumentUploaded(document_id=document.id))
         return document
 
@@ -84,3 +105,14 @@ class Document:
     def mark_failed(self) -> None:
         self.status = DocumentStatus.FAILED
         self.events.append(DocumentProcessingFailed(document_id=self.id))
+
+
+def _title_from_url(parsed) -> str:
+    """A readable starting title from a URL: the last path segment humanized, or the
+    host when there is no path. Enrichment refines it later (ADR-027)."""
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    if segments:
+        words = segments[-1].rsplit(".", 1)[0].replace("-", " ").replace("_", " ").split()
+        if words:
+            return " ".join(word.capitalize() for word in words)
+    return parsed.netloc

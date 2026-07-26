@@ -11,29 +11,41 @@ from cicero.services.views import ChapterView, DocumentView, SummaryView
 
 
 class DocumentResponse(BaseModel):
-    """Wire shape of a document (ADR-005): identity, title, status, kind (ADR-026)."""
+    """Wire shape of a document (ADR-005): identity, title, status, kind, source (ADR-026/027)."""
 
     id: uuid.UUID
     title: str
     status: DocumentStatus
     kind: DocumentKind
+    source_url: str | None = None
 
     @classmethod
     def from_domain(cls, document: Document) -> DocumentResponse:
-        """From the write model — a create/upload echoes the affected aggregate."""
+        """From the write model — a create/upload/ingest echoes the affected aggregate."""
         return cls(
             id=document.id.value,
             title=document.title,
             status=document.status,
             kind=document.kind,
+            source_url=document.source_url,
         )
 
     @classmethod
     def from_view(cls, view: DocumentView) -> DocumentResponse:
         """From the read model (ADR-015) — the list endpoint maps it to the wire DTO."""
         return cls(
-            id=view.id.value, title=view.title, status=view.status, kind=view.kind
+            id=view.id.value,
+            title=view.title,
+            status=view.status,
+            kind=view.kind,
+            source_url=view.source_url,
         )
+
+
+class IngestUrlRequest(BaseModel):
+    """Wire shape of a URL ingest (ADR-027): the article's link."""
+
+    url: str
 
 
 class SummaryResponse(BaseModel):

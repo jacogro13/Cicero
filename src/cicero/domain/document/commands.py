@@ -13,6 +13,13 @@ class UploadDocument(Command):
 
 
 @dataclass(frozen=True)
+class IngestUrl(Command):
+    """Ingest a web article by URL — no file, the link is the source (ADR-027)."""
+
+    url: str
+
+
+@dataclass(frozen=True)
 class DeleteDocument(Command):
     """Remove a document and its source file (ADR-012)."""
 

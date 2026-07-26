@@ -3,13 +3,18 @@ from __future__ import annotations
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from cicero.domain.document.exceptions import DocumentNotFound, InvalidDocumentTitle
+from cicero.domain.document.exceptions import (
+    DocumentNotFound,
+    InvalidDocumentTitle,
+    InvalidDocumentUrl,
+)
 from cicero.domain.exceptions import DomainError
 
 #: Domain errors that carry a client meaning, mapped to their HTTP status. An
 #: error absent here is a programming oversight, surfaced as 500 (ADR-008).
 _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     InvalidDocumentTitle: 422,
+    InvalidDocumentUrl: 422,
     DocumentNotFound: 404,
 }
 

@@ -11,6 +11,7 @@ from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from cicero.adapters.extraction.pymupdf import PyMuPDFExtractor
+from cicero.adapters.extraction.trafilatura import TrafilaturaArticleExtractor
 from cicero.adapters.persistence.engine import make_engine, make_session_factory
 from cicero.adapters.persistence.migrations import upgrade_to_head
 from cicero.adapters.persistence.orm import start_mappers
@@ -21,6 +22,7 @@ from cicero.adapters.summarization.openai import OpenAISummarizer
 from cicero.domain.document import commands
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.events import DocumentUploaded, ExtractionCompleted
+from cicero.domain.document.ports.article_extractor import ArticleExtractor
 from cicero.domain.document.ports.document_extractor import DocumentExtractor
 from cicero.domain.document.ports.document_storage import DocumentStorage
 from cicero.domain.document.ports.document_summarizer import DocumentSummarizer
@@ -30,6 +32,7 @@ from cicero.entrypoints.settings import Settings, get_settings
 from cicero.services.document.advance_document import AdvanceDocument
 from cicero.services.document.delete_document import DeleteDocument
 from cicero.services.document.extract_document import ExtractDocument
+from cicero.services.document.ingest_url import IngestUrl
 from cicero.services.document.summarise_document import SummariseDocument
 from cicero.services.document.upload_document import UploadDocument
 from cicero.services.messagebus import MessageBus
@@ -92,6 +95,10 @@ def get_document_extractor() -> DocumentExtractor:
     return PyMuPDFExtractor()
 
 
+def get_article_extractor() -> ArticleExtractor:
+    return TrafilaturaArticleExtractor()
+
+
 def get_document_summarizer() -> DocumentSummarizer:
     return make_summarizer(get_settings())
 
@@ -114,20 +121,22 @@ def bootstrap(
     uow_factory: UnitOfWorkFactory,
     storage: DocumentStorage,
     extractor: DocumentExtractor,
+    article_extractor: ArticleExtractor,
     summarizer: DocumentSummarizer,
     queue: JobQueue,
 ) -> MessageBus:
-    """Wire deps into the handlers and build the command/event maps (ADR-011→016).
+    """Wire deps into the handlers and build the command/event maps (ADR-011→016, 027).
 
     Commands come from the edge; each slow stage's completion event re-enqueues the
-    document via ``AdvanceDocument``, so upload causes extraction causes summarization.
+    document via ``AdvanceDocument``, so upload/ingest causes extraction causes summarization.
     """
     return MessageBus(
         uow_factory,
         command_handlers={
             commands.UploadDocument: UploadDocument(storage),
+            commands.IngestUrl: IngestUrl(),
             commands.DeleteDocument: DeleteDocument(storage),
-            commands.ExtractDocument: ExtractDocument(storage, extractor),
+            commands.ExtractDocument: ExtractDocument(storage, extractor, article_extractor),
             commands.SummariseDocument: SummariseDocument(storage, summarizer),
         },
         event_handlers={
@@ -144,6 +153,7 @@ def build_message_bus(queue: JobQueue) -> MessageBus:
         get_uow_factory(),
         _make_storage(settings),
         get_document_extractor(),
+        get_article_extractor(),
         get_document_summarizer(),
         queue,
     )

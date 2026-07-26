@@ -8,6 +8,10 @@ class InvalidDocumentTitle(DomainError):
     """A document title fails its rule (e.g. empty). Maps to 422 (ADR-008)."""
 
 
+class InvalidDocumentUrl(DomainError):
+    """An ingest URL is not a valid http(s) link. Maps to 422 (ADR-008/027)."""
+
+
 class DocumentNotFound(DomainError):
     """No document exists for the given id. Maps to 404 (ADR-008)."""
 
