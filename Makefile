@@ -1,4 +1,4 @@
-.PHONY: sync lint test integration dev up down \
+.PHONY: sync lint test integration dev up down migration \
         fe-install fe-dev fe-lint fe-test fe-build
 
 sync:                 ## Install dependencies into the uv venv
@@ -21,6 +21,9 @@ down:                 ## Stop the stack and remove its volumes
 
 dev:                  ## Run the app on the host (needs Postgres + MinIO; see .env.example)
 	uv run uvicorn cicero.entrypoints.main:app --reload
+
+migration:            ## Autogenerate a revision from model changes (m="msg"; needs DATABASE_URL)
+	uv run alembic revision --autogenerate -m "$(m)"
 
 fe-install:           ## Install the admin SPA's node dependencies (frontend/)
 	cd frontend && npm install

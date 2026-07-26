@@ -13,6 +13,6 @@ RUN uv sync --frozen --no-dev
 
 EXPOSE 8000
 
-# The app provisions its schema + bucket on startup (ADR-010), so no entrypoint
-# migration step — just run it.
+# The app migrates its schema (alembic upgrade head) and ensures its bucket on
+# startup (ADR-024), so no separate entrypoint migration step — just run it.
 CMD ["uv", "run", "uvicorn", "cicero.entrypoints.main:app", "--host", "0.0.0.0", "--port", "8000"]

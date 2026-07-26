@@ -6,15 +6,14 @@ assembled once in the lifespan; tests swap it at the `get_message_bus` seam.
 
 from __future__ import annotations
 
+import anyio
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from cicero.adapters.extraction.pymupdf import PyMuPDFExtractor
-from cicero.adapters.persistence.engine import (
-    create_schema,
-    make_engine,
-    make_session_factory,
-)
+from cicero.adapters.persistence.engine import make_engine, make_session_factory
+from cicero.adapters.persistence.migrations import upgrade_to_head
+from cicero.adapters.persistence.orm import start_mappers
 from cicero.adapters.persistence.unit_of_work import make_sqlalchemy_uow_factory
 from cicero.adapters.storage.s3 import S3DocumentStorage
 from cicero.adapters.summarization.mock import MockSummarizer
@@ -67,11 +66,16 @@ def _make_storage(settings: Settings) -> S3DocumentStorage:
 
 
 async def provision_infrastructure() -> None:
-    """Create the DB schema and ensure the bucket — idempotent startup (ADR-010)."""
-    _get_session_factory()  # build the engine
-    assert _engine is not None
-    await create_schema(_engine)
-    await _make_storage(get_settings()).ensure_bucket()
+    """Migrate the DB to head and ensure the bucket — idempotent startup (ADR-024).
+
+    Alembic runs its own async engine, so it goes on a worker thread, off the
+    lifespan's event loop.
+    """
+    settings = get_settings()
+    _get_session_factory()  # build the process-wide engine
+    start_mappers()
+    await anyio.to_thread.run_sync(upgrade_to_head, settings.database_url)
+    await _make_storage(settings).ensure_bucket()
 
 
 def get_uow_factory() -> UnitOfWorkFactory:

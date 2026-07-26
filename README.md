@@ -104,9 +104,9 @@ curl http://localhost:8000/api/documents                # list them
 make down          # stop the stack and remove its volumes
 ```
 
-The api provisions its own schema and bucket on startup, so the stack needs no setup
-step — `git clone` → `make up` and it runs. Every value defaults; copy
-[`.env.example`](.env.example) to `.env` only to override.
+The api migrates its own schema (`alembic upgrade head`) and ensures its bucket on
+startup, so the stack needs no setup step — `git clone` → `make up` and it runs. Every
+value defaults; copy [`.env.example`](.env.example) to `.env` only to override.
 
 ## Development
 
