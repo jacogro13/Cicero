@@ -602,9 +602,12 @@ the code on purpose. Implemented so far:
 - The **E2E suite** (the `e2e/` tree): black-box Playwright specs (`make e2e`) that
   bring up the `docker compose` stack and drive both surfaces through a browser over
   same-origin `/api` — admin (upload → `SUMMARISED` → summary / extracted / PDF /
-  delete) and reader (library grid → chapter navigation → per-chapter summary) — with
-  the mock summarizer forced for determinism. Run locally with `make e2e` and gated on
-  every PR by a dedicated CI job that cold-builds the stack.
+  delete), reader (library grid → chapter navigation → per-chapter summary), and URL
+  ingest (admin URL tab → `SUMMARISED` → the reader's Articles tab) — with the mock
+  summarizer forced for determinism. The URL spec fetches a page served inside the
+  compose network by the profiled `article-fixture` service, so the ingest is real yet
+  self-contained. Run locally with `make e2e` and gated on every PR by a dedicated CI
+  job that cold-builds the stack.
 
 Everything under **Planned** above is direction, not code, yet.
 
