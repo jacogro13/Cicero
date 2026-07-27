@@ -6,7 +6,7 @@ article. Planned on top: chat over a document, and a podcast for articles.
 
 > **This repository is a portfolio piece.** The app is real and useful, but the
 > primary goal is to demonstrate engineering practice: clean **Domain-Driven Design
-> + Hexagonal (ports-and-adapters) architecture**, developed **strictly test-first**,
+> plus Hexagonal (ports-and-adapters) architecture**, developed **strictly test-first**,
 > with every significant decision captured as an **ADR**. It is **self-contained** by
 > design — the target is `git clone` → `docker compose up` with zero external
 > services. The git history is part of the artifact: a clean red→green TDD trail.
