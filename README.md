@@ -2,7 +2,7 @@
 
 Cicero turns documents — PDF uploads or web articles — into AI-generated
 summaries you actually read: per-chapter for a book, a single summary for an
-article. Built on top: chat over a document, and a podcast for articles.
+article. Planned on top: chat over a document, and a podcast for articles.
 
 > **This repository is a portfolio piece.** The app is real and useful, but the
 > primary goal is to demonstrate engineering practice: clean **Domain-Driven Design
@@ -22,8 +22,10 @@ article. Built on top: chat over a document, and a podcast for articles.
   lifecycle, and one `bus.handle()` routes commands (exactly one handler) and events
   (zero or more), so new reactions are added by *subscribing*, not by editing the
   caller. Introduced where the processing pipeline needs it, not speculatively.
-- **The full test pyramid** — fast unit and API tests with in-memory fakes, plus
-  **integration tests against real Postgres** in throwaway containers (testcontainers).
+- **The full test pyramid** — fast unit and API tests with in-memory fakes,
+  **integration tests against real Postgres and MinIO** in throwaway containers
+  (testcontainers), and **black-box Playwright E2E** through the compose stack — all
+  gated in CI.
 - **Architecture Decision Records** ([`docs/adr/`](docs/adr/)) — the *why* behind each
   choice, **including what was deliberately deferred or kept simple**. Judgment and
   restraint are the point as much as the patterns themselves.
@@ -62,31 +64,46 @@ the full map and [`docs/adr/`](docs/adr/) for the decisions behind it.
 
 ## Status
 
-Work in progress, built incrementally and test-first. Implemented so far:
+Work in progress, built incrementally and test-first — but already a running,
+end-to-end app, not a scaffold. Implemented so far:
 
-- `GET /health` and the app + CI spine.
-- The `Document` aggregate — generated id, validated title, guarded status lifecycle.
-- Persistence **ports** (`DocumentRepository`, `UnitOfWork`) with two implementations:
-  an in-memory fake and a **Postgres adapter** proven against a real database.
-- Use cases (`services/`): `UploadDocument` (file-first over an object-storage port),
-  `ListDocuments`, `DeleteDocument`, `ExtractDocument` (PDF → Markdown).
-- A **message bus** — commands and events through one `bus.handle()`; the `Document`
-  aggregate raises domain events, drained by the Unit of Work. `UploadDocument` runs
-  through it as the proof; the pipeline follows.
-- HTTP API: `POST` / `GET` / `DELETE /api/documents`.
-- A **composition root** that runs the app for real — environment-driven settings,
-  an engine lifespan, and startup provisioning of the schema + bucket — so
-  **`docker compose up` runs the whole stack** (api + Postgres + MinIO) end to end.
+- **The document pipeline, end to end.** Upload a PDF or ingest a web article by URL,
+  and it flows through extraction → chapterization → AI summarization as a chain of
+  **domain-event handlers** on an in-process job queue (serial, with restart recovery).
+- **AI summaries** — per-chapter for a book, a single summary for an article — with a
+  **mock adapter as the zero-config default** and a pluggable **OpenAI-compatible**
+  endpoint. Oversized chapters are handled by a map-reduce chunker.
+- **Chapter navigation** rebuilt from the PDF's table of contents, with a no-TOC
+  fallback; each chapter carries its own summary.
+- **Enrichment** (best-effort, never gates readability): cover render + author/year
+  inference, again mock-by-default with an OpenAI-compatible option.
+- **Two React frontends**, split by role: a **reader** (library grid with a
+  Books | Articles switch; a document page with TOC + per-chapter summaries) and an
+  **admin console** (upload, URL ingest, status polling, delete, inspect extracted
+  Markdown, view the original PDF).
+- **A CQRS read side** — reads bypass the bus through a query/`views` module, with a
+  denormalized per-chapter read model.
+- **Clean architecture, enforced:** hexagonal layering with an `import-linter` fitness
+  function in CI, a persistence-ignorant domain (imperative SQLAlchemy mapping), a
+  message bus, domain exceptions mapped to HTTP at the edge, and **Alembic migrations**.
+- **HTTP API:** documents CRUD + `/url` ingest, `/summary`, `/chapters`, `/content`,
+  and the original `/file`.
+- **The full test pyramid**, all gated in CI: fast unit + API tests with in-memory
+  fakes, integration tests against real Postgres + MinIO (testcontainers), and
+  **black-box Playwright E2E** through the compose stack.
+- **Self-contained:** `git clone` → `docker compose up` runs the whole stack
+  (api + Postgres + MinIO); the api runs its own migrations and provisions its bucket
+  on startup.
 
-Planned: PDF chapter navigation, URL ingest, AI summaries (mock by default, any
-OpenAI-compatible endpoint pluggable), chat, podcast, two React frontends (admin +
-reader), and end-to-end tests. See the roadmap in
+Planned next: podcast (articles), chat over a document with typed SSE streaming,
+embedding RAG, library-wide chat, notes, and library organisation. See the roadmap in
 [`docs/architecture.md`](docs/architecture.md).
 
 ## Tech stack
 
-Python 3.12 · FastAPI · SQLAlchemy 2 (async) · PostgreSQL · MinIO (S3) · `uv` ·
-pytest · import-linter · testcontainers · Docker Compose. React frontends to come.
+Python 3.12 · FastAPI · SQLAlchemy 2 (async) · Alembic · PostgreSQL · MinIO (S3) ·
+`uv` · pytest · import-linter · testcontainers · React · Vite · Vitest · Playwright ·
+Docker Compose.
 
 ## Requirements
 
