@@ -325,12 +325,15 @@ readable as before — best-effort, never a gate (ADR-028).
 page 0 rendered to PNG (`CoverRenderer` → `PyMuPDFCoverRenderer`), or a web article's
 `og:image` fetched, scheme-checked and size/type-capped, over HTTP (`ArticleCoverRenderer`
 → `TrafilaturaArticleCoverRenderer`, **not** a headless-browser screenshot) — stored
-at `document.cover_key`, absent when neither yields one. And **authors/year** from the
-opening extracted text through a **`MetadataInferer`** port (`MockMetadataInferer` the
-zero-config default that infers nothing, `OpenAIMetadataInferer` when `LLM_BASE_URL` is
-set — the summarizer's endpoint, config-selected the same way), with a **PDF docinfo
-fallback** harvested alongside the cover filling whatever the model leaves blank. Any
-error commits `FAILED`; a document deleted mid-stage is dropped, not resurrected.
+at `document.cover_key`, absent when neither yields one. And **authors/year** through a
+**`MetadataInferer`** port over the opening text (`MockMetadataInferer` the zero-config
+default that infers nothing, `OpenAIMetadataInferer` when `LLM_BASE_URL` is set — the
+summarizer's endpoint, config-selected the same way), merged with the source's own
+metadata by a **priority that inverts per kind** (ADR-028 amendment): a **PDF** trusts
+the model first, its docinfo the fallback; a **URL** trusts the page's structured byline
+first (author/date parsed alongside the `og:image`, surfaced on the `ArticleCoverRenderer`
+return), the model the fallback. Any error commits `FAILED`; a document deleted mid-stage
+is dropped, not resurrected.
 
 The branch rides a **second `JobQueue`** with its own concurrency budget, so a slow
 cover render cannot starve summarization. `ExtractionCompleted` — where both source
