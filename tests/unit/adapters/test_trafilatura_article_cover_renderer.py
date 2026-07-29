@@ -16,9 +16,20 @@ from cicero.adapters.enrichment.cover.trafilatura import TrafilaturaArticleCover
 _JPEG = b"\xff\xd8\xff\xe0JPEGDATA"
 
 
-def _stub_page(monkeypatch, *, html="<html></html>", image="https://cdn.test/cover.jpg"):
+def _stub_page(
+    monkeypatch,
+    *,
+    html="<html></html>",
+    image="https://cdn.test/cover.jpg",
+    author=None,
+    date=None,
+):
     monkeypatch.setattr(trafilatura, "fetch_url", lambda url: html)
-    metadata = None if image is None else SimpleNamespace(image=image)
+    metadata = (
+        None
+        if (image is None and author is None and date is None)
+        else SimpleNamespace(image=image, author=author, date=date)
+    )
     monkeypatch.setattr(trafilatura, "extract_metadata", lambda html: metadata)
 
 
@@ -36,41 +47,65 @@ class TestTrafilaturaArticleCoverRenderer:
         _stub_page(monkeypatch, image="https://cdn.test/cover.jpg")
         renderer = TrafilaturaArticleCoverRenderer(transport=_image_transport())
 
-        cover = await renderer.fetch_cover("https://example.com/a")
+        fetched = await renderer.fetch_cover("https://example.com/a")
 
-        assert cover == _JPEG
+        assert fetched.image == _JPEG
 
-    async def test_no_og_image_returns_none(self, monkeypatch):
+    async def test_surfaces_the_bylines_author_and_year(self, monkeypatch):
+        # The structured metadata harvested alongside the cover — the URL branch's
+        # primary source of authors/year (ADR-028 amendment).
+        _stub_page(monkeypatch, author="Jane Roe", date="2021-05-04")
+        renderer = TrafilaturaArticleCoverRenderer(transport=_image_transport())
+
+        fetched = await renderer.fetch_cover("https://example.com/a")
+
+        assert fetched.author == "Jane Roe"
+        assert fetched.year == 2021
+
+    async def test_no_og_image_still_returns_the_byline(self, monkeypatch):
+        # No cover, but the page still stated an author — the byline is not lost.
+        _stub_page(monkeypatch, image=None, author="Jane Roe", date="2021-05-04")
+        renderer = TrafilaturaArticleCoverRenderer(transport=_image_transport())
+
+        fetched = await renderer.fetch_cover("https://example.com/a")
+
+        assert fetched.image is None
+        assert fetched.author == "Jane Roe"
+
+    async def test_no_og_image_returns_no_cover(self, monkeypatch):
         _stub_page(monkeypatch, image=None)
         renderer = TrafilaturaArticleCoverRenderer(transport=_image_transport())
 
-        assert await renderer.fetch_cover("https://example.com/a") is None
+        assert (await renderer.fetch_cover("https://example.com/a")).image is None
 
-    async def test_a_failed_page_fetch_returns_none(self, monkeypatch):
+    async def test_a_failed_page_fetch_returns_nothing(self, monkeypatch):
         _stub_page(monkeypatch, html=None)
         renderer = TrafilaturaArticleCoverRenderer(transport=_image_transport())
 
-        assert await renderer.fetch_cover("https://example.com/a") is None
+        fetched = await renderer.fetch_cover("https://example.com/a")
 
-    async def test_a_non_image_response_returns_none(self, monkeypatch):
+        assert fetched.image is None
+        assert fetched.author is None
+
+    async def test_a_non_image_response_returns_no_cover(self, monkeypatch):
         _stub_page(monkeypatch)
         renderer = TrafilaturaArticleCoverRenderer(
             transport=_image_transport(content_type="text/html")
         )
 
-        assert await renderer.fetch_cover("https://example.com/a") is None
+        assert (await renderer.fetch_cover("https://example.com/a")).image is None
 
-    async def test_an_oversized_image_returns_none(self, monkeypatch):
+    async def test_an_oversized_image_returns_no_cover(self, monkeypatch):
         _stub_page(monkeypatch)
         renderer = TrafilaturaArticleCoverRenderer(
             max_bytes=4, transport=_image_transport(content=b"x" * 100)
         )
 
-        assert await renderer.fetch_cover("https://example.com/a") is None
+        assert (await renderer.fetch_cover("https://example.com/a")).image is None
 
-    async def test_a_non_http_image_url_returns_none(self, monkeypatch):
+    async def test_a_non_http_image_url_returns_no_cover(self, monkeypatch):
         # A data: URI never reaches the network — the scheme guard drops it (SSRF-ish).
         _stub_page(monkeypatch, image="data:image/png;base64,AAAA")
         renderer = TrafilaturaArticleCoverRenderer(transport=_image_transport())
 
-        assert await renderer.fetch_cover("https://example.com/a") is None
+        assert (await renderer.fetch_cover("https://example.com/a")).image is None

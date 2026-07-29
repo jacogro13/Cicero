@@ -151,6 +151,37 @@ class TestEnrichDocument:
         assert enriched.has_cover is False
         assert document.cover_key not in storage.objects
 
+    async def test_url_structured_metadata_is_primary_over_the_model(self):
+        # For a URL the page's own byline wins; the model only fills gaps — the
+        # inverse of the PDF priority (ADR-028 amendment).
+        uow_factory = make_in_memory_uow_factory()
+        storage = InMemoryDocumentStorage()
+        document = await _extracted_article(uow_factory, storage)
+        article = StubArticleCoverRenderer(cover=b"OG", author="Page Author", year=2021)
+        inferer = StubMetadataInferer(InferredMetadata(authors="Model Author", year=1999))
+
+        await _enrich(uow_factory, storage, document.id, article=article, inferer=inferer)
+
+        async with uow_factory() as uow:
+            enriched = await uow.documents.find_by_id(document.id)
+        assert enriched.authors == "Page Author"
+        assert enriched.year == 2021
+
+    async def test_url_falls_back_to_the_model_for_what_metadata_omits(self):
+        uow_factory = make_in_memory_uow_factory()
+        storage = InMemoryDocumentStorage()
+        document = await _extracted_article(uow_factory, storage)
+        # The page named an author but shipped no date; the model supplies the year.
+        article = StubArticleCoverRenderer(cover=None, author="Page Author", year=None)
+        inferer = StubMetadataInferer(InferredMetadata(authors="Model Author", year=2020))
+
+        await _enrich(uow_factory, storage, document.id, article=article, inferer=inferer)
+
+        async with uow_factory() as uow:
+            enriched = await uow.documents.find_by_id(document.id)
+        assert enriched.authors == "Page Author"
+        assert enriched.year == 2020
+
     async def test_commits_enriching_before_the_work_runs(self):
         # A spy inferer reads the persisted status mid-call: it must already be
         # ENRICHING, i.e. committed before the heavy work begins (mirrors summarise).
