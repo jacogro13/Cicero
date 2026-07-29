@@ -63,3 +63,21 @@ grid grow covers and attribution.
   cannot starve summarization, and vice versa.
 - Enrichment is idempotent: re-running overwrites, so a retried job is safe; a
   screenshot cover for pages without an `og:image` remains a future upgrade.
+
+---
+
+## Amendment — metadata priority is per source kind
+
+The Decision's *model-primary, docinfo-fallback* order fits PDFs but backfires on
+URLs: an article's byline lives in its structured metadata (`og:` / `article:` /
+JSON-LD), not the body the model reads, so it was returning empty. So the priority
+**inverts by source**, symmetric with the cover branch:
+
+- **PDF** — model-primary, the file's docinfo the fallback (unchanged).
+- **URL** — the page's **structured metadata primary**, the model the fallback. The
+  author/date trafilatura already parses alongside the `og:image` is surfaced on the
+  `ArticleCoverRenderer`'s return (mirroring `RenderedCover`), so one fetch yields
+  cover *and* byline; the model fills only what the page omits.
+
+Best-effort is unchanged: a page with neither structured byline nor an in-body one
+stays `None`.
