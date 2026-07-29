@@ -109,6 +109,7 @@ Docker Compose.
 
 - Docker (to run the stack, and for the integration tests)
 - Python 3.12 and [uv](https://docs.astral.sh/uv/) (to develop / run the fast suite)
+- Node.js 20+ (CI uses 22) — only for the frontend and the E2E suite
 
 ## Run it
 

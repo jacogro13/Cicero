@@ -4,6 +4,9 @@
   "private": true,
   "description": "Black-box Playwright E2E for the Cicero compose stack (ADR-025)",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "test": "playwright test"
   },
