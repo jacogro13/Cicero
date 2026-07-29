@@ -20,6 +20,11 @@ export interface DocumentResponse {
   title: string;
   status: DocumentStatus;
   kind: DocumentKind;
+  // Best-effort enrichment (ADR-028), off the readability spine: authors/year are
+  // null until inferred, and has_cover is false until a cover has been rendered.
+  authors: string | null;
+  year: number | null;
+  has_cover: boolean;
 }
 
 export interface SummaryResponse {
@@ -95,4 +100,11 @@ export function getContent(id: string): Promise<string> {
 // /api prefix the http wrapper otherwise adds).
 export function fileUrl(id: string): string {
   return `/api/documents/${id}/file`;
+}
+
+// The rendered cover image, served with its sniffed content type (ADR-028). A plain
+// same-origin URL for an <img> src; the endpoint 404s until a cover exists, so callers
+// gate on has_cover before pointing an <img> at it.
+export function coverUrl(id: string): string {
+  return `/api/documents/${id}/cover`;
 }

@@ -29,8 +29,24 @@ beforeEach(() => {
 describe("AdminPage", () => {
   it("renders documents and their status from the read side", async () => {
     mockedApi.listDocuments.mockResolvedValue([
-      { id: "1", title: "The Odyssey", status: "SUMMARISED", kind: "BOOK" },
-      { id: "2", title: "Draft notes", status: "EXTRACTING", kind: "BOOK" },
+      {
+        id: "1",
+        title: "The Odyssey",
+        status: "SUMMARISED",
+        kind: "BOOK",
+        authors: null,
+        year: null,
+        has_cover: false,
+      },
+      {
+        id: "2",
+        title: "Draft notes",
+        status: "EXTRACTING",
+        kind: "BOOK",
+        authors: null,
+        year: null,
+        has_cover: false,
+      },
     ]);
 
     renderWithClient(<App />, "/admin");
@@ -56,6 +72,9 @@ describe("AdminPage", () => {
       title: "New paper",
       status: "UPLOADED",
       kind: "BOOK",
+      authors: null,
+      year: null,
+      has_cover: false,
     });
 
     renderWithClient(<App />, "/admin");
@@ -81,6 +100,9 @@ describe("AdminPage", () => {
       title: "example.com",
       status: "UPLOADED",
       kind: "ARTICLE",
+      authors: null,
+      year: null,
+      has_cover: false,
     });
 
     renderWithClient(<App />, "/admin");
@@ -103,7 +125,15 @@ describe("AdminPage", () => {
   it("deletes a document", async () => {
     const user = userEvent.setup();
     mockedApi.listDocuments.mockResolvedValue([
-      { id: "1", title: "The Odyssey", status: "SUMMARISED", kind: "BOOK" },
+      {
+        id: "1",
+        title: "The Odyssey",
+        status: "SUMMARISED",
+        kind: "BOOK",
+        authors: null,
+        year: null,
+        has_cover: false,
+      },
     ]);
     mockedApi.deleteDocument.mockResolvedValue(undefined);
 
@@ -120,7 +150,15 @@ describe("AdminPage", () => {
   it("opens a summary for a summarised document", async () => {
     const user = userEvent.setup();
     mockedApi.listDocuments.mockResolvedValue([
-      { id: "1", title: "The Odyssey", status: "SUMMARISED", kind: "BOOK" },
+      {
+        id: "1",
+        title: "The Odyssey",
+        status: "SUMMARISED",
+        kind: "BOOK",
+        authors: null,
+        year: null,
+        has_cover: false,
+      },
     ]);
     mockedApi.getSummary.mockResolvedValue({ text: "A hero sails home." });
 
@@ -136,9 +174,19 @@ describe("AdminPage", () => {
   it("opens the extracted text for an extracted document", async () => {
     const user = userEvent.setup();
     mockedApi.listDocuments.mockResolvedValue([
-      { id: "1", title: "The Odyssey", status: "EXTRACTED", kind: "BOOK" },
+      {
+        id: "1",
+        title: "The Odyssey",
+        status: "EXTRACTED",
+        kind: "BOOK",
+        authors: null,
+        year: null,
+        has_cover: false,
+      },
     ]);
-    mockedApi.getContent.mockResolvedValue("## Book I\n\nSing to me of the man…");
+    mockedApi.getContent.mockResolvedValue(
+      "## Book I\n\nSing to me of the man…",
+    );
 
     renderWithClient(<App />, "/admin");
     await screen.findByText("The Odyssey");
@@ -153,7 +201,15 @@ describe("AdminPage", () => {
 
   it("links to the original PDF for every document", async () => {
     mockedApi.listDocuments.mockResolvedValue([
-      { id: "1", title: "Draft notes", status: "UPLOADED", kind: "BOOK" },
+      {
+        id: "1",
+        title: "Draft notes",
+        status: "UPLOADED",
+        kind: "BOOK",
+        authors: null,
+        year: null,
+        has_cover: false,
+      },
     ]);
 
     renderWithClient(<App />, "/admin");
@@ -168,7 +224,15 @@ describe("AdminPage", () => {
   it("renders the summary Markdown as formatted elements, not raw text", async () => {
     const user = userEvent.setup();
     mockedApi.listDocuments.mockResolvedValue([
-      { id: "1", title: "The Odyssey", status: "SUMMARISED", kind: "BOOK" },
+      {
+        id: "1",
+        title: "The Odyssey",
+        status: "SUMMARISED",
+        kind: "BOOK",
+        authors: null,
+        year: null,
+        has_cover: false,
+      },
     ]);
     mockedApi.getSummary.mockResolvedValue({
       text: "## Themes\n\n- **Homecoming** and cunning.",

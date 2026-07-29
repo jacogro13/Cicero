@@ -16,7 +16,15 @@ const mockedApi = vi.mocked(api);
 beforeEach(() => {
   vi.clearAllMocks();
   mockedApi.listDocuments.mockResolvedValue([
-    { id: "1", title: "The Odyssey", status: "SUMMARISED", kind: "BOOK" },
+    {
+      id: "1",
+      title: "The Odyssey",
+      status: "SUMMARISED",
+      kind: "BOOK",
+      authors: null,
+      year: null,
+      has_cover: false,
+    },
   ]);
 });
 
@@ -24,7 +32,11 @@ describe("ReaderPage", () => {
   it("navigates chapters by the TOC and reads the chapter summary", async () => {
     const user = userEvent.setup();
     mockedApi.getChapters.mockResolvedValue([
-      { index: 0, title: "Book I", summary: "## Athena\n\nThe goddess pleads." },
+      {
+        index: 0,
+        title: "Book I",
+        summary: "## Athena\n\nThe goddess pleads.",
+      },
       { index: 1, title: "Book II", summary: "Telemachus sails at dawn." },
     ]);
 

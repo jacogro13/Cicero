@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import type { DocumentKind } from "../api/documents";
+import type { DocumentKind, DocumentResponse } from "../api/documents";
+import { coverUrl } from "../api/documents";
 import { StatusBadge } from "../components/StatusBadge";
 import { useDocuments } from "../hooks/useDocuments";
 import styles from "./LibraryPage.module.css";
@@ -16,6 +17,13 @@ const KINDS: { value: DocumentKind; label: string }[] = [
 const EMPTY: Record<DocumentKind, string> = {
   BOOK: "No books yet.",
   ARTICLE: "No articles here.",
+};
+
+// The best-effort attribution line (ADR-028): authors and year, whichever exist,
+// joined; null when enrichment has filled in neither.
+const attribution = (doc: DocumentResponse): string | null => {
+  const parts = [doc.authors, doc.year].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : null;
 };
 
 // The reader's front door (ADR-022): every document as a card linking into the
@@ -59,7 +67,20 @@ export function LibraryPage() {
           {shown.map((doc) => (
             <li key={doc.id}>
               <Link to={`/documents/${doc.id}`} className={styles.card}>
+                {doc.has_cover ? (
+                  <img
+                    className={styles.cover}
+                    src={coverUrl(doc.id)}
+                    alt={`Cover of ${doc.title}`}
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className={styles.coverBlank} aria-hidden="true" />
+                )}
                 <span className={styles.title}>{doc.title}</span>
+                {attribution(doc) && (
+                  <span className={styles.attribution}>{attribution(doc)}</span>
+                )}
                 <StatusBadge status={doc.status} />
               </Link>
             </li>

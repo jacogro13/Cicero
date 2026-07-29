@@ -75,10 +75,30 @@
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
 }
 
+.cover,
+.coverBlank {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: 0.4rem;
+  background: #f3f4f6;
+}
+
+.coverBlank {
+  display: flex;
+  border: 1px dashed #e5e7eb;
+}
+
 .title {
   font-size: 1rem;
   font-weight: 600;
   line-height: 1.35;
+}
+
+.attribution {
+  margin-top: -0.4rem;
+  font-size: 0.85rem;
+  color: #6b7280;
 }
 
 .muted {
