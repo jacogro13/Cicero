@@ -21,6 +21,7 @@ const doc = (over: Partial<DocumentResponse> = {}): DocumentResponse => ({
   title: "The Odyssey",
   status: "SUMMARISED",
   kind: "BOOK",
+  source_url: null,
   authors: null,
   year: null,
   has_cover: false,

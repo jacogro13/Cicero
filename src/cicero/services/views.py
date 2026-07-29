@@ -127,8 +127,9 @@ async def get_document_file(
     uow_factory: UnitOfWorkFactory,
     storage: DocumentStorage,
     document_id: DocumentId,
-) -> bytes:
-    """The original source file from storage, present from ``UPLOADED`` (ADR-019).
+) -> bytes | None:
+    """The original source file from storage, present from ``UPLOADED`` — or ``None``
+    for a URL document, which has no source blob (ADR-019/027).
 
     Raises :class:`DocumentNotFound` for an unknown id.
     """
@@ -136,6 +137,8 @@ async def get_document_file(
         document = await uow.documents.find_by_id(document_id)
     if document is None:
         raise DocumentNotFound(document_id)
+    if document.source_url is not None:
+        return None
     return await storage.get(document.source_key)
 
 

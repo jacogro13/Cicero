@@ -40,6 +40,16 @@ test("admin URL ingest → summarised → reader Articles tab", async ({
   expect(doc.kind).toBe("ARTICLE");
   await waitForSummarised(request, doc.id);
 
+  // The admin row links out to the article, not to a dead "View PDF": a URL
+  // document has no source blob, so a /file link would 404 (ADR-027).
+  await page.goto("/admin");
+  const articleLink = page.locator(`a[href="${url}"]`);
+  await expect(articleLink).toBeVisible();
+  await expect(articleLink).toHaveText("Visit article");
+  await expect(
+    page.locator(`a[href="/api/documents/${doc.id}/file"]`),
+  ).toHaveCount(0);
+
   // The reader keeps articles behind the Articles tab, Books first (ADR-026).
   await page.goto("/");
   const card = page.locator(`a[href="/documents/${doc.id}"]`);

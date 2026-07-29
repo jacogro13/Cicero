@@ -114,10 +114,12 @@ async def get_document_file(
     uow_factory: UnitOfWorkFactory = Depends(get_uow_factory),
     storage: DocumentStorage = Depends(get_document_storage),
 ) -> Response:
-    """Admin inspection: the original PDF, streamed from storage (ADR-019)."""
+    """Admin inspection: the original PDF, 404 for a URL document with no source (ADR-019/027)."""
     content = await views.get_document_file(
         uow_factory, storage, DocumentId(document_id)
     )
+    if content is None:
+        raise HTTPException(status_code=404, detail="file not available")
     return Response(content=content, media_type="application/pdf")
 
 

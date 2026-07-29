@@ -31,14 +31,25 @@ export function DocumentRow({ doc }: { doc: DocumentResponse }) {
             View extracted
           </button>
         )}
-        <a
-          className={`${styles.view} ${styles.viewLink}`}
-          href={fileUrl(doc.id)}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          View PDF
-        </a>
+        {doc.source_url ? (
+          <a
+            className={`${styles.view} ${styles.viewLink}`}
+            href={doc.source_url}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Visit article
+          </a>
+        ) : (
+          <a
+            className={`${styles.view} ${styles.viewLink}`}
+            href={fileUrl(doc.id)}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            View PDF
+          </a>
+        )}
         <button
           className={styles.delete}
           onClick={() => del.mutate(doc.id)}

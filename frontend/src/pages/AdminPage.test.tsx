@@ -34,6 +34,7 @@ describe("AdminPage", () => {
         title: "The Odyssey",
         status: "SUMMARISED",
         kind: "BOOK",
+        source_url: null,
         authors: null,
         year: null,
         has_cover: false,
@@ -43,6 +44,7 @@ describe("AdminPage", () => {
         title: "Draft notes",
         status: "EXTRACTING",
         kind: "BOOK",
+        source_url: null,
         authors: null,
         year: null,
         has_cover: false,
@@ -72,6 +74,7 @@ describe("AdminPage", () => {
       title: "New paper",
       status: "UPLOADED",
       kind: "BOOK",
+      source_url: null,
       authors: null,
       year: null,
       has_cover: false,
@@ -100,6 +103,7 @@ describe("AdminPage", () => {
       title: "example.com",
       status: "UPLOADED",
       kind: "ARTICLE",
+      source_url: "https://example.com",
       authors: null,
       year: null,
       has_cover: false,
@@ -130,6 +134,7 @@ describe("AdminPage", () => {
         title: "The Odyssey",
         status: "SUMMARISED",
         kind: "BOOK",
+        source_url: null,
         authors: null,
         year: null,
         has_cover: false,
@@ -155,6 +160,7 @@ describe("AdminPage", () => {
         title: "The Odyssey",
         status: "SUMMARISED",
         kind: "BOOK",
+        source_url: null,
         authors: null,
         year: null,
         has_cover: false,
@@ -179,6 +185,7 @@ describe("AdminPage", () => {
         title: "The Odyssey",
         status: "EXTRACTED",
         kind: "BOOK",
+        source_url: null,
         authors: null,
         year: null,
         has_cover: false,
@@ -199,13 +206,14 @@ describe("AdminPage", () => {
     expect(mockedApi.getContent).toHaveBeenCalledWith("1");
   });
 
-  it("links to the original PDF for every document", async () => {
+  it("links to the original PDF for an uploaded document", async () => {
     mockedApi.listDocuments.mockResolvedValue([
       {
         id: "1",
         title: "Draft notes",
         status: "UPLOADED",
         kind: "BOOK",
+        source_url: null,
         authors: null,
         year: null,
         has_cover: false,
@@ -221,6 +229,34 @@ describe("AdminPage", () => {
     );
   });
 
+  it("links to the source article for a URL document, not a dead PDF link", async () => {
+    // A URL article has no source blob (ADR-027), so "View PDF" would 404; the row
+    // links out to the article instead.
+    mockedApi.listDocuments.mockResolvedValue([
+      {
+        id: "1",
+        title: "Clean Architecture",
+        status: "SUMMARISED",
+        kind: "ARTICLE",
+        source_url: "https://example.com/blog/clean-architecture",
+        authors: null,
+        year: null,
+        has_cover: false,
+      },
+    ]);
+
+    renderWithClient(<App />, "/admin");
+    await screen.findByText("Clean Architecture");
+
+    expect(screen.getByRole("link", { name: "Visit article" })).toHaveAttribute(
+      "href",
+      "https://example.com/blog/clean-architecture",
+    );
+    expect(
+      screen.queryByRole("link", { name: "View PDF" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders the summary Markdown as formatted elements, not raw text", async () => {
     const user = userEvent.setup();
     mockedApi.listDocuments.mockResolvedValue([
@@ -229,6 +265,7 @@ describe("AdminPage", () => {
         title: "The Odyssey",
         status: "SUMMARISED",
         kind: "BOOK",
+        source_url: null,
         authors: null,
         year: null,
         has_cover: false,

@@ -20,6 +20,9 @@ export interface DocumentResponse {
   title: string;
   status: DocumentStatus;
   kind: DocumentKind;
+  // The link a URL article was ingested from, else null for an uploaded PDF
+  // (ADR-027). The backend branches on this, not on kind (which is browsing-only).
+  source_url: string | null;
   // Best-effort enrichment (ADR-028), off the readability spine: authors/year are
   // null until inferred, and has_cover is false until a cover has been rendered.
   authors: string | null;
