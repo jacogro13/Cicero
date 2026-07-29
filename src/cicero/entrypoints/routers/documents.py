@@ -121,6 +121,42 @@ async def get_document_file(
     return Response(content=content, media_type="application/pdf")
 
 
+# Cover bytes come from a PDF render (PNG) or an article's og:image (any format), so
+# the content type is read off the magic bytes rather than assumed (ADR-028).
+_IMAGE_SIGNATURES: tuple[tuple[bytes, str], ...] = (
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+)
+
+
+def _image_media_type(data: bytes) -> str:
+    """Sniff an image's media type from its leading bytes, or fall back to a generic
+    binary type — the browser sniffs an ``<img>`` source regardless."""
+    for signature, media_type in _IMAGE_SIGNATURES:
+        if data.startswith(signature):
+            return media_type
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return "application/octet-stream"
+
+
+@router.get("/{document_id}/cover")
+async def get_document_cover(
+    document_id: UUID,
+    uow_factory: UnitOfWorkFactory = Depends(get_uow_factory),
+    storage: DocumentStorage = Depends(get_document_storage),
+) -> Response:
+    """The document's cover image, 404 until enrichment has rendered one (ADR-028)."""
+    cover = await views.get_document_cover(
+        uow_factory, storage, DocumentId(document_id)
+    )
+    if cover is None:
+        raise HTTPException(status_code=404, detail="cover not available")
+    return Response(content=cover, media_type=_image_media_type(cover))
+
+
 @router.delete("/{document_id}", status_code=204)
 async def delete_document(
     document_id: UUID,

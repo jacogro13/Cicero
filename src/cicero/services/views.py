@@ -18,13 +18,17 @@ from cicero.domain.ports.unit_of_work import UnitOfWorkFactory
 
 @dataclass(frozen=True)
 class DocumentView:
-    """Read model of a document: identity, title, status, kind, source (ADR-015/026/027)."""
+    """Read model of a document: identity, title, status, kind, source, and the
+    best-effort enrichment — authors, year, whether a cover exists (ADR-015/026/027/028)."""
 
     id: DocumentId
     title: str
     status: DocumentStatus
     kind: DocumentKind
     source_url: str | None
+    authors: str | None
+    year: int | None
+    has_cover: bool
 
 
 @dataclass(frozen=True)
@@ -52,7 +56,14 @@ async def list_documents(uow_factory: UnitOfWorkFactory) -> list[DocumentView]:
         documents = await uow.documents.find_all()
     return [
         DocumentView(
-            id=d.id, title=d.title, status=d.status, kind=d.kind, source_url=d.source_url
+            id=d.id,
+            title=d.title,
+            status=d.status,
+            kind=d.kind,
+            source_url=d.source_url,
+            authors=d.authors,
+            year=d.year,
+            has_cover=d.has_cover,
         )
         for d in documents
     ]
@@ -126,3 +137,22 @@ async def get_document_file(
     if document is None:
         raise DocumentNotFound(document_id)
     return await storage.get(document.source_key)
+
+
+async def get_document_cover(
+    uow_factory: UnitOfWorkFactory,
+    storage: DocumentStorage,
+    document_id: DocumentId,
+) -> bytes | None:
+    """The rendered cover image bytes, or ``None`` until enrichment has stored one —
+    best-effort, so a document may never have a cover (ADR-028).
+
+    Raises :class:`DocumentNotFound` for an unknown id.
+    """
+    async with uow_factory() as uow:
+        document = await uow.documents.find_by_id(document_id)
+    if document is None:
+        raise DocumentNotFound(document_id)
+    if not document.has_cover:
+        return None
+    return await storage.get(document.cover_key)

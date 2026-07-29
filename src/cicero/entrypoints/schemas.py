@@ -11,13 +11,17 @@ from cicero.services.views import ChapterView, DocumentView, SummaryView
 
 
 class DocumentResponse(BaseModel):
-    """Wire shape of a document (ADR-005): identity, title, status, kind, source (ADR-026/027)."""
+    """Wire shape of a document (ADR-005): identity, title, status, kind, source, and the
+    best-effort enrichment — authors, year, whether a cover exists (ADR-026/027/028)."""
 
     id: uuid.UUID
     title: str
     status: DocumentStatus
     kind: DocumentKind
     source_url: str | None = None
+    authors: str | None = None
+    year: int | None = None
+    has_cover: bool = False
 
     @classmethod
     def from_domain(cls, document: Document) -> DocumentResponse:
@@ -28,6 +32,9 @@ class DocumentResponse(BaseModel):
             status=document.status,
             kind=document.kind,
             source_url=document.source_url,
+            authors=document.authors,
+            year=document.year,
+            has_cover=document.has_cover,
         )
 
     @classmethod
@@ -39,6 +46,9 @@ class DocumentResponse(BaseModel):
             status=view.status,
             kind=view.kind,
             source_url=view.source_url,
+            authors=view.authors,
+            year=view.year,
+            has_cover=view.has_cover,
         )
 
 
