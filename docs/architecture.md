@@ -310,6 +310,40 @@ subscription of `AdvanceDocument` to `ExtractionCompleted` — the bus payoff. S
 **[ADR-018](adr/018-openai-compatible-summarizer-adapter.md)**, and
 **[ADR-020](adr/020-map-reduce-summarization-for-oversized-documents.md)**.
 
+## Enrichment: cover, authors, year — the first branch
+
+Everything above is the **readability spine**: `DocumentStatus` marching to
+`SUMMARISED`, at which point the document is fully readable. **Enrichment** is the
+first stage that is *not* on it — a cover image, author(s), and a year, none of
+which gate reading. It cannot join the spine (before `SUMMARISED` it would delay
+readability; after, it would reopen a done document), so it is a **branch** with its
+**own status axis**, `EnrichmentStatus` (`PENDING → ENRICHING → ENRICHED / FAILED`),
+that nothing on the spine reads. A `FAILED` enrichment leaves the document exactly as
+readable as before — best-effort, never a gate (ADR-028).
+
+**`EnrichDocument`** is the branch's single stage. It fills a **cover** — a PDF's
+page 0 rendered to PNG (`CoverRenderer` → `PyMuPDFCoverRenderer`), or a web article's
+`og:image` fetched, scheme-checked and size/type-capped, over HTTP (`ArticleCoverRenderer`
+→ `TrafilaturaArticleCoverRenderer`, **not** a headless-browser screenshot) — stored
+at `document.cover_key`, absent when neither yields one. And **authors/year** from the
+opening extracted text through a **`MetadataInferer`** port (`MockMetadataInferer` the
+zero-config default that infers nothing, `OpenAIMetadataInferer` when `LLM_BASE_URL` is
+set — the summarizer's endpoint, config-selected the same way), with a **PDF docinfo
+fallback** harvested alongside the cover filling whatever the model leaves blank. Any
+error commits `FAILED`; a document deleted mid-stage is dropped, not resurrected.
+
+The branch rides a **second `JobQueue`** with its own concurrency budget, so a slow
+cover render cannot starve summarization. `ExtractionCompleted` — where both source
+blob and extracted text exist — gains a **second `AdvanceDocument` subscriber** onto
+that queue; its consumer reads `enrichment_status` and dispatches `EnrichDocument`
+while unfinished, the same status-driven edge the spine uses (`entrypoints/enrichment_pipeline.py`).
+Restart recovery mirrors the spine's: `reconcile_pending_enrichment` re-enqueues each
+**text-ready and unfinished** document (`awaits_enrichment` crossing both axes) with no
+jobs table. The cover is read back at `GET /api/documents/{id}/cover` (content type
+sniffed from the image's magic bytes, 404 until rendered); `authors`/`year`/`has_cover`
+join the list DTO, and the reader's shelf grows covers and attribution. See
+**[ADR-028](adr/028-enrichment-cover-authors-year.md)**.
+
 ## Background jobs: the serial queue
 
 Extraction (and the summaries and podcast ahead) is slow and memory-heavy, so it
@@ -594,16 +628,18 @@ the code on purpose. Implemented so far:
   also reverse-proxies same-origin `/api` (a Vite proxy mirrors it in development). The
   **admin console** (`/admin`) uploads, lists — polling the pipeline through TanStack
   Query until every document is terminal — deletes, and inspects the raw extraction. The
-  **reader** (`/`) lists the library and reads per-chapter summaries navigated by the
-  table of contents (`/api/documents/{id}/chapters`), extracted text staying admin-only.
+  **reader** (`/`) lists the library — each shelf card growing the enriched cover and
+  its authors/year attribution (ADR-028) — and reads per-chapter summaries navigated by
+  the table of contents (`/api/documents/{id}/chapters`), extracted text staying admin-only.
   Component-tested against a mocked client (Vitest); a CI node job runs its lint /
   typecheck / tests / build, and a CI image-build job builds the api + web images on
   every PR.
 - The **E2E suite** (the `e2e/` tree): black-box Playwright specs (`make e2e`) that
   bring up the `docker compose` stack and drive both surfaces through a browser over
   same-origin `/api` — admin (upload → `SUMMARISED` → summary / extracted / PDF /
-  delete), reader (library grid → chapter navigation → per-chapter summary), and URL
-  ingest (admin URL tab → `SUMMARISED` → the reader's Articles tab) — with the mock
+  delete), reader (library grid → chapter navigation → per-chapter summary), enrichment
+  (upload → cover rendered → the shelf card shows it), and URL ingest (admin URL tab →
+  `SUMMARISED` → the reader's Articles tab) — with the mock
   summarizer forced for determinism. The URL spec fetches a page served inside the
   compose network by the profiled `article-fixture` service, so the ingest is real yet
   self-contained. Run locally with `make e2e` and gated on every PR by a dedicated CI
@@ -643,3 +679,4 @@ references a decision made later.
 - [ADR-025 — End-to-end tests with Playwright](adr/025-end-to-end-tests-with-playwright.md)
 - [ADR-026 — Documents are classified as Books or Articles](adr/026-document-kind.md)
 - [ADR-027 — Ingesting a web article by URL](adr/027-url-ingest.md)
+- [ADR-028 — Enrichment: cover, authors, year](adr/028-enrichment-cover-authors-year.md)
