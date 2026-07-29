@@ -335,6 +335,18 @@ class TestDocumentFile:
         assert response.headers["content-type"] == "application/pdf"
         assert response.content == _PDF[1]
 
+    def test_url_document_returns_404(self):
+        # A URL article has no source blob (ADR-027); the file route reports a clean
+        # 404 rather than failing on a missing key.
+        client = _client()
+        created = client.post(
+            "/api/documents/url", json={"url": "https://example.com/blog/post"}
+        ).json()
+
+        response = client.get(f"/api/documents/{created['id']}/file")
+
+        assert response.status_code == 404
+
     def test_unknown_id_returns_404(self):
         client = _client()
 

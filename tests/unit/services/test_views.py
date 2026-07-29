@@ -209,6 +209,17 @@ class TestGetDocumentFile:
 
         assert file == b"%PDF-1.4 bytes"
 
+    async def test_returns_none_for_a_url_document_with_no_source_blob(self):
+        # A URL article skips PDF storage (ADR-027), so there is no source blob —
+        # None, not an error, so the route reports 404 without touching storage.
+        uow_factory, storage = make_in_memory_uow_factory(), InMemoryDocumentStorage()
+        document = Document.create_from_url("https://example.com/blog/post")
+        async with uow_factory() as uow:
+            await uow.documents.save(document)
+            await uow.commit()
+
+        assert await views.get_document_file(uow_factory, storage, document.id) is None
+
     async def test_raises_when_the_document_is_unknown(self):
         with pytest.raises(DocumentNotFound):
             await views.get_document_file(
