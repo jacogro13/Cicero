@@ -57,6 +57,30 @@ class TestListDocuments:
     async def test_returns_an_empty_list_when_there_are_no_documents(self):
         assert await views.list_documents(make_in_memory_uow_factory()) == []
 
+    async def test_carries_the_enrichment_metadata(self):
+        # The read model surfaces the enriched cover/authors/year so the shelf can
+        # show attribution and a cover (ADR-028).
+        uow_factory = make_in_memory_uow_factory()
+        document = Document.create("Clean Code")
+        document.apply_enrichment(authors="Robert C. Martin", year=2008, has_cover=True)
+        async with uow_factory() as uow:
+            await uow.documents.save(document)
+            await uow.commit()
+
+        [view] = await views.list_documents(uow_factory)
+
+        assert (view.authors, view.year, view.has_cover) == ("Robert C. Martin", 2008, True)
+
+    async def test_defaults_the_enrichment_metadata_before_it_is_filled(self):
+        uow_factory = make_in_memory_uow_factory()
+        async with uow_factory() as uow:
+            await uow.documents.save(Document.create("Clean Code"))
+            await uow.commit()
+
+        [view] = await views.list_documents(uow_factory)
+
+        assert (view.authors, view.year, view.has_cover) == (None, None, False)
+
 
 class TestGetDocumentSummary:
     async def test_joins_the_chapter_summaries(self):
@@ -188,5 +212,37 @@ class TestGetDocumentFile:
     async def test_raises_when_the_document_is_unknown(self):
         with pytest.raises(DocumentNotFound):
             await views.get_document_file(
+                make_in_memory_uow_factory(), InMemoryDocumentStorage(), DocumentId.new()
+            )
+
+
+class TestGetDocumentCover:
+    async def test_returns_the_cover_bytes_once_enrichment_has_stored_one(self):
+        uow_factory, storage = make_in_memory_uow_factory(), InMemoryDocumentStorage()
+        document = Document.create("Clean Code")
+        document.apply_enrichment(authors=None, year=None, has_cover=True)
+        async with uow_factory() as uow:
+            await uow.documents.save(document)
+            await uow.commit()
+        await storage.put(document.cover_key, b"\x89PNG\r\n\x1a\ncover")
+
+        cover = await views.get_document_cover(uow_factory, storage, document.id)
+
+        assert cover == b"\x89PNG\r\n\x1a\ncover"
+
+    async def test_returns_none_before_a_cover_has_been_rendered(self):
+        # A document without has_cover has no cover blob — None, not an error, so the
+        # route reports 404 without touching storage (best-effort, ADR-028).
+        uow_factory, storage = make_in_memory_uow_factory(), InMemoryDocumentStorage()
+        document = Document.create("Clean Code")
+        async with uow_factory() as uow:
+            await uow.documents.save(document)
+            await uow.commit()
+
+        assert await views.get_document_cover(uow_factory, storage, document.id) is None
+
+    async def test_raises_when_the_document_is_unknown(self):
+        with pytest.raises(DocumentNotFound):
+            await views.get_document_cover(
                 make_in_memory_uow_factory(), InMemoryDocumentStorage(), DocumentId.new()
             )

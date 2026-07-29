@@ -186,6 +186,20 @@ class TestListDocuments:
         assert response.status_code == 200
         assert [doc["title"] for doc in response.json()] == ["Clean Code"]
 
+    def test_list_carries_the_enrichment_metadata(self):
+        # The shelf reads authors/year/has_cover off the list DTO (ADR-028); a fresh
+        # upload carries their un-enriched defaults rather than omitting the keys.
+        client = _client()
+        client.post(
+            "/api/documents", data={"title": "Clean Code"}, files={"file": _PDF}
+        )
+
+        [doc] = client.get("/api/documents").json()
+
+        assert doc["authors"] is None
+        assert doc["year"] is None
+        assert doc["has_cover"] is False
+
 
 class TestDeleteDocument:
     def test_delete_removes_the_document_and_returns_204(self):
@@ -327,6 +341,64 @@ class TestDocumentFile:
         response = client.get(f"/api/documents/{uuid.uuid4()}/file")
 
         assert response.status_code == 404
+
+
+class TestDocumentCover:
+    def test_serves_a_png_cover_with_its_sniffed_content_type(self):
+        client = _client()
+        document = _seed_with_cover(client, b"\x89PNG\r\n\x1a\n\x00cover")
+
+        response = client.get(f"/api/documents/{document.id.value}/cover")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+        assert response.content == b"\x89PNG\r\n\x1a\n\x00cover"
+
+    def test_sniffs_a_jpeg_og_image_cover(self):
+        # An article's og:image can be any format; the content type is read off the
+        # bytes, not assumed to be the PDF renderer's PNG (ADR-028).
+        client = _client()
+        document = _seed_with_cover(client, b"\xff\xd8\xff\xe0jpegdata")
+
+        response = client.get(f"/api/documents/{document.id.value}/cover")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/jpeg"
+
+    def test_is_404_until_a_cover_has_been_rendered(self):
+        client = _client()
+        created = client.post(
+            "/api/documents", data={"title": "Clean Code"}, files={"file": _PDF}
+        ).json()
+
+        response = client.get(f"/api/documents/{created['id']}/cover")
+
+        assert response.status_code == 404
+
+    def test_unknown_id_returns_404(self):
+        client = _client()
+
+        response = client.get(f"/api/documents/{uuid.uuid4()}/cover")
+
+        assert response.status_code == 404
+
+
+def _seed_with_cover(client: TestClient, image: bytes) -> Document:
+    """Put an enriched document with a stored cover blob into the shared read seams."""
+    overrides = client.app.dependency_overrides
+    uow_factory = overrides[get_uow_factory]()
+    storage = overrides[get_document_storage]()
+
+    async def seed() -> Document:
+        document = Document.create("Clean Code")
+        document.apply_enrichment(authors="Robert C. Martin", year=2008, has_cover=True)
+        async with uow_factory() as uow:
+            await uow.documents.save(document)
+            await uow.commit()
+        await storage.put(document.cover_key, image)
+        return document
+
+    return asyncio.run(seed())
 
 
 class TestDomainErrorMapping:
