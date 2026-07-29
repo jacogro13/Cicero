@@ -98,3 +98,20 @@ export async function waitForSummarised(
     )
     .toBe(200);
 }
+
+// Poll until enrichment has rendered a cover — the branch runs off ExtractionCompleted
+// on its own queue (ADR-028), so this completes independently of summarisation.
+export async function waitForCover(
+  request: APIRequestContext,
+  id: string,
+): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get(`/api/documents/${id}/cover`);
+        return response.status();
+      },
+      { timeout: 60_000, intervals: [1000] },
+    )
+    .toBe(200);
+}
