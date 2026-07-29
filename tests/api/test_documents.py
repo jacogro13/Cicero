@@ -24,9 +24,12 @@ from cicero.entrypoints.main import create_app
 
 from tests.fakes import (
     InMemoryDocumentStorage,
+    StubArticleCoverRenderer,
     StubArticleExtractor,
+    StubCoverRenderer,
     StubDocumentExtractor,
     StubDocumentSummarizer,
+    StubMetadataInferer,
     make_in_memory_uow_factory,
 )
 
@@ -43,6 +46,10 @@ def _client() -> TestClient:
         StubDocumentExtractor("# Clean Code"),
         StubArticleExtractor(),
         StubDocumentSummarizer("A crisp summary."),
+        StubCoverRenderer(),
+        StubArticleCoverRenderer(),
+        StubMetadataInferer(),
+        JobQueue(),
         JobQueue(),
     )
     # Writes ride the bus; reads bypass it (ADR-015). Both share one uow_factory

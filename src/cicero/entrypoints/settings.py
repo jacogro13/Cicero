@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     s3_bucket: str = "documents"
     s3_region: str = "us-east-1"
     job_queue_concurrency: int = 1
+    # The enrichment branch drains on its own queue (ADR-028), so a slow cover render
+    # cannot starve summarization; its concurrency is budgeted independently.
+    enrichment_queue_concurrency: int = 1
 
     # Summarization LLM. Unset ``llm_base_url`` → the zero-config mock summarizer;
     # set it to any OpenAI-compatible endpoint (incl. the /v1) for a real model.
@@ -32,6 +35,9 @@ class Settings(BaseSettings):
     # Char budget for a single summarization call; input above it is map-reduced
     # (ADR-020). Default ≈ a 32k-context model with headroom; shrink for a smaller one.
     llm_summarize_max_input_chars: int = 100_000
+    # Metadata (authors/year) lives in the opening, so only this many chars are sent —
+    # no map-reduce (ADR-028). Far smaller than the summarization budget by design.
+    llm_metadata_max_input_chars: int = 8_000
 
 
 @lru_cache

@@ -10,6 +10,10 @@ import anyio
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from cicero.adapters.enrichment.cover.pymupdf import PyMuPDFCoverRenderer
+from cicero.adapters.enrichment.cover.trafilatura import TrafilaturaArticleCoverRenderer
+from cicero.adapters.enrichment.metadata.mock import MockMetadataInferer
+from cicero.adapters.enrichment.metadata.openai import OpenAIMetadataInferer
 from cicero.adapters.extraction.pymupdf import PyMuPDFExtractor
 from cicero.adapters.extraction.trafilatura import TrafilaturaArticleExtractor
 from cicero.adapters.persistence.engine import make_engine, make_session_factory
@@ -22,15 +26,19 @@ from cicero.adapters.summarization.openai import OpenAISummarizer
 from cicero.domain.document import commands
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.events import DocumentUploaded, ExtractionCompleted
+from cicero.domain.document.ports.article_cover_renderer import ArticleCoverRenderer
 from cicero.domain.document.ports.article_extractor import ArticleExtractor
+from cicero.domain.document.ports.cover_renderer import CoverRenderer
 from cicero.domain.document.ports.document_extractor import DocumentExtractor
 from cicero.domain.document.ports.document_storage import DocumentStorage
 from cicero.domain.document.ports.document_summarizer import DocumentSummarizer
+from cicero.domain.document.ports.metadata_inferer import MetadataInferer
 from cicero.domain.ports.unit_of_work import UnitOfWorkFactory
 from cicero.entrypoints.job_queue import JobQueue
 from cicero.entrypoints.settings import Settings, get_settings
 from cicero.services.document.advance_document import AdvanceDocument
 from cicero.services.document.delete_document import DeleteDocument
+from cicero.services.document.enrich_document import EnrichDocument
 from cicero.services.document.extract_document import ExtractDocument
 from cicero.services.document.ingest_url import IngestUrl
 from cicero.services.document.set_document_kind import SetDocumentKind
@@ -118,18 +126,51 @@ def make_summarizer(settings: Settings) -> DocumentSummarizer:
     return MockSummarizer()
 
 
+def get_cover_renderer() -> CoverRenderer:
+    return PyMuPDFCoverRenderer()
+
+
+def get_article_cover_renderer() -> ArticleCoverRenderer:
+    return TrafilaturaArticleCoverRenderer()
+
+
+def get_metadata_inferer() -> MetadataInferer:
+    return make_metadata_inferer(get_settings())
+
+
+def make_metadata_inferer(settings: Settings) -> MetadataInferer:
+    """Select the metadata inferer from config, sharing the summarizer's LLM endpoint:
+    OpenAI-compatible when ``LLM_BASE_URL`` is set, else the zero-config mock that
+    infers nothing — so enrichment never depends on a model (ADR-028)."""
+    if settings.llm_base_url:
+        return OpenAIMetadataInferer(
+            base_url=settings.llm_base_url,
+            model=settings.llm_model,
+            api_key=settings.llm_api_key,
+            max_input_chars=settings.llm_metadata_max_input_chars,
+            timeout=settings.llm_timeout,
+        )
+    return MockMetadataInferer()
+
+
 def bootstrap(
     uow_factory: UnitOfWorkFactory,
     storage: DocumentStorage,
     extractor: DocumentExtractor,
     article_extractor: ArticleExtractor,
     summarizer: DocumentSummarizer,
+    cover_renderer: CoverRenderer,
+    article_cover_renderer: ArticleCoverRenderer,
+    metadata_inferer: MetadataInferer,
     queue: JobQueue,
+    enrich_queue: JobQueue,
 ) -> MessageBus:
-    """Wire deps into the handlers and build the command/event maps (ADR-011→016, 027).
+    """Wire deps into the handlers and build the command/event maps (ADR-011→016, 027, 028).
 
     Commands come from the edge; each slow stage's completion event re-enqueues the
     document via ``AdvanceDocument``, so upload/ingest causes extraction causes summarization.
+    ``ExtractionCompleted`` fans out to a *second* subscriber that feeds the enrichment
+    branch's own queue — the spine and the branch advance off the same fact, apart (ADR-028).
     """
     return MessageBus(
         uow_factory,
@@ -140,15 +181,21 @@ def bootstrap(
             commands.DeleteDocument: DeleteDocument(storage),
             commands.ExtractDocument: ExtractDocument(storage, extractor, article_extractor),
             commands.SummariseDocument: SummariseDocument(storage, summarizer),
+            commands.EnrichDocument: EnrichDocument(
+                storage, cover_renderer, article_cover_renderer, metadata_inferer
+            ),
         },
         event_handlers={
             DocumentUploaded: [AdvanceDocument(queue.enqueue)],
-            ExtractionCompleted: [AdvanceDocument(queue.enqueue)],
+            ExtractionCompleted: [
+                AdvanceDocument(queue.enqueue),
+                AdvanceDocument(enrich_queue.enqueue),
+            ],
         },
     )
 
 
-def build_message_bus(queue: JobQueue) -> MessageBus:
+def build_message_bus(queue: JobQueue, enrich_queue: JobQueue) -> MessageBus:
     """Assemble the bus from the real adapters — called once in the lifespan."""
     settings = get_settings()
     return bootstrap(
@@ -157,7 +204,11 @@ def build_message_bus(queue: JobQueue) -> MessageBus:
         get_document_extractor(),
         get_article_extractor(),
         get_document_summarizer(),
+        get_cover_renderer(),
+        get_article_cover_renderer(),
+        get_metadata_inferer(),
         queue,
+        enrich_queue,
     )
 
 
