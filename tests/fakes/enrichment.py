@@ -4,7 +4,10 @@ metadata that record what they were handed, without PyMuPDF, the network, or an 
 
 from __future__ import annotations
 
-from cicero.domain.document.ports.article_cover_renderer import ArticleCoverRenderer
+from cicero.domain.document.ports.article_cover_renderer import (
+    ArticleCoverRenderer,
+    FetchedArticle,
+)
 from cicero.domain.document.ports.cover_renderer import CoverRenderer, RenderedCover
 from cicero.domain.document.ports.metadata_inferer import InferredMetadata, MetadataInferer
 
@@ -25,13 +28,18 @@ class StubCoverRenderer(CoverRenderer):
 
 
 class StubArticleCoverRenderer(ArticleCoverRenderer):
-    def __init__(self, cover: bytes | None = b"OGIMAGE") -> None:
-        self._cover = cover
+    def __init__(
+        self,
+        cover: bytes | None = b"OGIMAGE",
+        author: str | None = None,
+        year: int | None = None,
+    ) -> None:
+        self._fetched = FetchedArticle(image=cover, author=author, year=year)
         self.received: str | None = None
 
-    async def fetch_cover(self, url: str) -> bytes | None:
+    async def fetch_cover(self, url: str) -> FetchedArticle:
         self.received = url
-        return self._cover
+        return self._fetched
 
 
 class StubMetadataInferer(MetadataInferer):

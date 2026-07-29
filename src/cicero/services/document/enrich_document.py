@@ -78,23 +78,23 @@ class EnrichDocument:
     async def _collect(
         self, document: Document
     ) -> tuple[bytes | None, str | None, int | None]:
-        """The cover bytes (or ``None``) and the merged authors/year. The model's
-        inference wins; a PDF's own docinfo fills whatever it leaves blank."""
+        """The cover bytes (or ``None``) and the merged authors/year. Priority is per
+        source (ADR-028 amendment): a PDF trusts the model first, its docinfo the
+        fallback; a URL trusts the page's structured byline first, the model the
+        fallback — a byline lives in page metadata, not the body the model reads."""
         opening = (await self._storage.get(document.chapter_key(0))).decode()
-        metadata = await self._metadata_inferer.infer(opening)
+        model = await self._metadata_inferer.infer(opening)
         if document.source_url is not None:
-            cover = await self._article_cover_renderer.fetch_cover(document.source_url)
-            author_fallback = year_fallback = None
-        else:
-            rendered = await self._cover_renderer.render_cover(
-                await self._storage.get(document.source_key)
-            )
-            cover, author_fallback, year_fallback = (
-                rendered.image,
-                rendered.author,
-                rendered.year,
-            )
-        return cover, metadata.authors or author_fallback, metadata.year or year_fallback
+            fetched = await self._article_cover_renderer.fetch_cover(document.source_url)
+            authors = fetched.author or model.authors
+            year = fetched.year or model.year
+            return fetched.image, authors, year
+        rendered = await self._cover_renderer.render_cover(
+            await self._storage.get(document.source_key)
+        )
+        authors = model.authors or rendered.author
+        year = model.year or rendered.year
+        return rendered.image, authors, year
 
     async def _still_present(self, document_id: DocumentId, uow: UnitOfWork) -> bool:
         async with uow:

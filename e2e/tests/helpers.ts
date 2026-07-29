@@ -26,6 +26,8 @@ interface DocumentResponse {
   status: string;
   kind: string;
   source_url: string | null;
+  authors: string | null;
+  year: number | null;
 }
 
 // The self-contained article the compose `article-fixture` service serves (ADR-027):
@@ -97,6 +99,28 @@ export async function waitForSummarised(
       { timeout: 60_000, intervals: [1000] },
     )
     .toBe(200);
+}
+
+// Poll the list read side until enrichment has filled the byline — the branch runs
+// off ExtractionCompleted on its own queue (ADR-028), so authors/year land
+// independently of summarisation. Returns the enriched document.
+export async function waitForAuthors(
+  request: APIRequestContext,
+  id: string,
+): Promise<DocumentResponse> {
+  let match: DocumentResponse | undefined;
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get("/api/documents");
+        const docs = (await response.json()) as DocumentResponse[];
+        match = docs.find((doc) => doc.id === id);
+        return match?.authors ?? null;
+      },
+      { timeout: 60_000, intervals: [1000] },
+    )
+    .not.toBeNull();
+  return match!;
 }
 
 // Poll until enrichment has rendered a cover — the branch runs off ExtractionCompleted

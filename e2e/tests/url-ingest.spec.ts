@@ -4,6 +4,7 @@ import {
   deleteDocument,
   findDocumentBySourceUrl,
   uniqueArticleUrl,
+  waitForAuthors,
   waitForSummarised,
 } from "./helpers";
 
@@ -39,6 +40,13 @@ test("admin URL ingest → summarised → reader Articles tab", async ({
   createdId = doc.id;
   expect(doc.kind).toBe("ARTICLE");
   await waitForSummarised(request, doc.id);
+
+  // The byline comes from the page's structured metadata, not the body: the mock
+  // inferer returns nothing, so a populated author proves the URL branch reads the
+  // article:author/published_time tags first (ADR-028 amendment).
+  const enriched = await waitForAuthors(request, doc.id);
+  expect(enriched.authors).toBe("Alan Kay");
+  expect(enriched.year).toBe(2021);
 
   // The admin row links out to the article, not to a dead "View PDF": a URL
   // document has no source blob, so a /file link would 404 (ADR-027).
