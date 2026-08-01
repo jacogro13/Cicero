@@ -41,8 +41,15 @@ class UnitOfWork(ABC):
     async def rollback(self) -> None: ...
 
     def collect_new_events(self) -> Iterator[Event]:
-        """Drain domain events off the aggregates touched in this transaction (ADR-011)."""
-        for document in list(self.documents.seen.values()):
+        """Drain domain events off the aggregates touched in this transaction (ADR-011).
+
+        The repositories are built on entry, so a UoW no handler opened has none —
+        and nothing to drain. The bus asks unconditionally, after every message.
+        """
+        documents = getattr(self, "documents", None)
+        if documents is None:
+            return
+        for document in list(documents.seen.values()):
             yield from document.collect_events()
 
 
