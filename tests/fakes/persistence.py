@@ -150,17 +150,27 @@ class InMemoryChapterReadModel(ChapterReadModel):
 class InMemoryUnitOfWork(UnitOfWork):
     """One ``async with`` block is one transaction over the shared stores."""
 
+    documents: InMemoryDocumentRepository
+    chapters: InMemoryChapterReadModel
+    summaries: InMemorySummaryReadModel
+
     def __init__(
         self,
         store: dict[DocumentId, Document],
         chapter_store: dict[DocumentId, list[str]],
         summary_store: dict[tuple[DocumentId, int], str],
     ) -> None:
-        self.documents = InMemoryDocumentRepository(store)
-        self.chapters = InMemoryChapterReadModel(chapter_store)
-        self.summaries = InMemorySummaryReadModel(summary_store)
+        self._store = store
+        self._chapter_store = chapter_store
+        self._summary_store = summary_store
 
     async def __aenter__(self) -> Self:
+        # Rebuilt per block, as the real UoW rebuilds its repositories over a fresh
+        # session: `seen` is transaction-scoped, so a UoW entered twice cannot
+        # re-drain the earlier block's aggregates.
+        self.documents = InMemoryDocumentRepository(self._store)
+        self.chapters = InMemoryChapterReadModel(self._chapter_store)
+        self.summaries = InMemorySummaryReadModel(self._summary_store)
         return self
 
     async def __aexit__(
