@@ -65,6 +65,24 @@ class TestSaveAndFetchDocument:
         assert len(first) == 1
         assert second == []
 
+    async def test_a_reused_uow_sees_nothing_from_its_earlier_transaction(self):
+        # The real UoW builds its repositories in __aenter__, one set per block, so
+        # `seen` cannot outlive a transaction. A handler entering the same UoW twice
+        # (every pipeline stage does) must not re-drain the first block's aggregates.
+        uow_factory = make_in_memory_uow_factory()
+        uow = uow_factory()
+
+        async with uow:
+            await uow.documents.save(Document.create("Domain-Driven Design"))
+            await uow.commit()
+
+        async with uow:
+            second = Document.create("Refactoring")
+            await uow.documents.save(second)
+            events = list(uow.collect_new_events())
+
+        assert events == [DocumentUploaded(document_id=second.id)]
+
     async def test_an_exception_in_the_block_discards_the_writes(self):
         uow_factory = make_in_memory_uow_factory()
         doc = Document.create("Patterns of Enterprise Application Architecture")
