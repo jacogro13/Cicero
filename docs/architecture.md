@@ -402,12 +402,19 @@ sequenceDiagram
 
 ## Errors: the domain raises, the entrypoints map
 
-Domain failures are a small `DomainError` hierarchy (`InvalidDocumentTitle`,
-`InvalidDocumentUrl`, `DocumentNotFound`) raised where the rule lives; the domain
-never names an HTTP status (ADR-001). A single registry in `entrypoints/errors.py`
-maps each to a response — `InvalidDocumentTitle`/`InvalidDocumentUrl → 422`,
-`DocumentNotFound → 404` — so the status codes live in one place and an unmapped
-domain error surfaces as 500 by design.
+Domain failures are a small `DomainError` hierarchy raised where the rule lives; the
+domain never names an HTTP status (ADR-001). A single registry in
+`entrypoints/errors.py` maps each to a response — `InvalidDocumentTitle`/
+`InvalidDocumentUrl → 422`, `DocumentNotFound → 404` — so the status codes live in
+one place and an unmapped domain error surfaces as 500 by design.
+
+The hierarchy also carries the failures the **ports** declare, next to the rest of
+the contract: `ArticleExtractionFailed` (a page that would not fetch or held no
+article) and `BlobNotFound` (storage has no object at the key). Both stay out of the
+registry deliberately — the first only ever reaches a background stage, the second
+means metadata points at a missing blob, which is a broken invariant, not a client
+error. Declaring them in the domain is what lets a caller in `services/` name a
+port's failure without importing the adapter that raises it.
 See **[ADR-008](adr/008-domain-exceptions-and-http-error-mapping.md)**.
 
 ## Exposing the use cases over HTTP

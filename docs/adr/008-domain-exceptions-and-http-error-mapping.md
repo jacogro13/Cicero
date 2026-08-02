@@ -51,3 +51,24 @@ No new layer is introduced, so the import-linter contract is unchanged.
 - Adding a domain failure is one subclass + one registry row + the raise site.
 - Cost: an unmapped `DomainError` surfaces as 500 by design — an explicit "this
   error was never assigned a client meaning" rather than a silently wrong status.
+
+---
+
+## Note (later): ports declare their failures here too
+
+**A port's failures belong to the port.** `ArticleExtractor` promised "raises on a
+failed fetch" while the only type lived in the trafilatura adapter — uncatchable
+without an `adapters` import the layering forbids. `DocumentStorage.get` named no
+failure at all, and the S3 adapter raised `ClientError` where the double raised
+`KeyError`. Both now sit in `domain/document/exceptions.py` as
+`ArticleExtractionFailed` and `BlobNotFound`, raised by every implementation and named
+in the port's docstring. Neither is registered — the first only reaches a background
+stage, the second means metadata points at a missing blob, which is what the
+unmapped→500 clause above is for. The handlers keep their broad `except`, now on its
+real footing: ADR-009/028 make status the outcome, so *every* failure marks FAILED.
+
+**An empty projection is not an absent document.** Read models keyed by id answer "no
+rows" for an id that never existed, so `GET /documents/{unknown}/chapters` returned
+`200 []`. Per-document reads now load the aggregate through one `_require_document`
+first, leaving the route's 404 its narrower meaning: the document exists, this
+artefact is not ready yet.
