@@ -74,6 +74,9 @@ class SummariseDocument:
     async def _mark_failed(self, document_id: DocumentId, uow: UnitOfWork) -> None:
         async with uow:
             document = await uow.documents.find_by_id(document_id)
+            if document is None:
+                logger.info("Document deleted during summarisation; dropping id=%s", document_id)
+                return
             document.mark_failed()
             await uow.documents.save(document)
             await uow.commit()

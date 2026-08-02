@@ -96,6 +96,9 @@ class ExtractDocument:
     ) -> None:
         async with uow:
             document = await uow.documents.find_by_id(document_id)
+            if document is None:
+                logger.info("Document deleted during extraction; dropping id=%s", document_id)
+                return
             transition(document)
             await uow.documents.save(document)
             await uow.commit()
