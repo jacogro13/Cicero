@@ -122,6 +122,33 @@ class TestDocumentPersistenceOnPostgres:
 
         assert {doc.title for doc in stored} == titles
 
+    async def test_find_all_keeps_its_order_across_an_update(
+        self, uow_factory: UnitOfWorkFactory
+    ):
+        # An unordered SELECT returns heap order, and every pipeline stage UPDATEs its
+        # document — which moves the row to the end of the heap. Inserted in title order,
+        # so only the UPDATE can break it: the library must not reshuffle under a
+        # document that is processing. In-memory insertion order hides this (ADR-006).
+        titles = ["Accelerate", "Clean Code", "Refactoring", "Release It!", "Working Effectively"]
+
+        async with uow_factory() as uow:
+            for title in titles:
+                await uow.documents.save(Document.create(title))
+            await uow.commit()
+
+        async with uow_factory() as uow:
+            extracting = next(
+                doc for doc in await uow.documents.find_all() if doc.title == "Clean Code"
+            )
+            extracting.mark_extracting()
+            await uow.documents.save(extracting)
+            await uow.commit()
+
+        async with uow_factory() as uow:
+            reloaded = await uow.documents.find_all()
+
+        assert [doc.title for doc in reloaded] == titles
+
     async def test_writes_are_not_persisted_without_a_commit(
         self, uow_factory: UnitOfWorkFactory
     ):
