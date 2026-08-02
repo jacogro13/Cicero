@@ -45,7 +45,9 @@ class InMemoryDocumentRepository(DocumentRepository):
         visible = {**self._store, **self._pending}
         for document_id in self._pending_deletes:
             visible.pop(document_id, None)
-        return list(visible.values())
+        # Sorted like the adapter's ORDER BY, not left in insertion order: a double
+        # that is kinder than its adapter is how the ordering bug shipped.
+        return sorted(visible.values(), key=lambda document: document.title)
 
     def flush(self) -> None:
         # Store a detached copy, mirroring the Postgres adapter expunging on commit:

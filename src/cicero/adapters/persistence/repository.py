@@ -25,7 +25,9 @@ class PostgresDocumentRepository(DocumentRepository):
         return await self._session.get(Document, document_id)
 
     async def _find_all(self) -> list[Document]:
-        return list(await self._session.scalars(select(Document)))
+        # Ordered in SQL: unordered, Postgres returns heap order, and every pipeline
+        # stage is an UPDATE that moves the row to the end of it.
+        return list(await self._session.scalars(select(Document).order_by(Document.title)))
 
     async def _delete(self, document: Document) -> None:
         await self._session.delete(document)
