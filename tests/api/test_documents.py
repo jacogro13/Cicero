@@ -234,6 +234,18 @@ class TestDocumentSummary:
 
         assert response.status_code == 404
 
+    def test_unknown_id_returns_404(self):
+        # Same status as "not summarised yet", but the two must not be the same
+        # answer: an absent document is DocumentNotFound (ADR-008), not an absent
+        # summary.
+        client = _client()
+
+        response = client.get(f"/api/documents/{uuid.uuid4()}/summary")
+
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
+        assert "summary" not in response.json()["detail"]
+
 
 def _seed_summarised(client: TestClient) -> Document:
     """Put a SUMMARISED document — chapter titles + per-chapter summaries — into the
@@ -269,6 +281,16 @@ class TestDocumentChapters:
             {"index": 0, "title": "Intro", "summary": "First."},
             {"index": 1, "title": "Body", "summary": "Second."},
         ]
+
+    def test_unknown_id_returns_404(self):
+        # Chapters are projections, so an unknown id reads as "no rows" unless the
+        # view checks the document exists — otherwise a nonexistent document is
+        # indistinguishable from an unextracted one (ADR-008).
+        client = _client()
+
+        response = client.get(f"/api/documents/{uuid.uuid4()}/chapters")
+
+        assert response.status_code == 404
 
 
 def _seed_extracted(client: TestClient) -> Document:
