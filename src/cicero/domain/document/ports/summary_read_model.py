@@ -4,9 +4,7 @@ from cicero.domain.document.document_id import DocumentId
 
 
 class SummaryReadModel(ABC):
-    """Port: the denormalized store of per-chapter summaries, reached through
-    ``uow.summaries`` (ADR-016/021). The summarisation stage writes it; the read side serves it.
-    """
+    """Port: per-chapter summaries, reached through ``uow.summaries`` (ADR-016/021)."""
 
     @abstractmethod
     async def save(self, document_id: DocumentId, chapter_index: int, text: str) -> None:

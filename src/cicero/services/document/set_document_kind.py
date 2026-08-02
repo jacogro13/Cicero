@@ -5,11 +5,8 @@ from cicero.domain.ports.unit_of_work import UnitOfWork
 
 
 class SetDocumentKind:
-    """Handler: correct a document's browsing classification (ADR-026).
-
-    kind is read by no pipeline stage, so this is a plain persisted mutation — no
-    storage, no event. Raises ``DocumentNotFound`` for an unknown id.
-    """
+    """Handler: correct a document's browsing classification — no pipeline stage
+    reads ``kind``, so this raises no event (ADR-026). Raises ``DocumentNotFound``."""
 
     async def __call__(
         self, command: commands.SetDocumentKind, uow: UnitOfWork

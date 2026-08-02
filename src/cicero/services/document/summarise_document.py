@@ -12,11 +12,10 @@ logger = logging.getLogger(__name__)
 
 
 class SummariseDocument:
-    """Handler for ``SummariseDocument``: summarise each chapter from its own stored
-    Markdown and persist the results as a read model, driving SUMMARISING→SUMMARISED/
-    FAILED (ADR-016/021). The summaries are written in the same transaction as
-    ``mark_summarised``. Raises ``DocumentNotFound``.
-    """
+    """Handler for ``SummariseDocument``: summarise each chapter from its stored
+    Markdown, driving SUMMARISING→SUMMARISED/FAILED (ADR-016/021). The summaries
+    commit in the same transaction as ``mark_summarised``. Raises
+    ``DocumentNotFound``."""
 
     def __init__(self, storage: DocumentStorage, summarizer: DocumentSummarizer) -> None:
         self._storage = storage
@@ -59,9 +58,8 @@ class SummariseDocument:
     async def _summarise_chapters(
         self, document: Document, count: int, uow: UnitOfWork
     ) -> list[str] | None:
-        """Summarise each chapter from its own stored Markdown, in order. Returns
-        ``None`` if the document was deleted partway, so no further chapter is
-        summarised — the call already in flight is still paid in full (ADR-023)."""
+        """The chapter summaries in order, or ``None`` if the document was deleted
+        partway — the call already in flight is still paid in full (ADR-023)."""
         summaries: list[str] = []
         for index in range(count):
             async with uow:

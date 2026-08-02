@@ -5,13 +5,8 @@ from cicero.domain.ports.unit_of_work import UnitOfWork
 
 
 class DeleteDocument:
-    """Handler: remove the metadata and its read-model projections, then the source
-    blob — metadata-first (ADR-004, ADR-008).
-
-    Tears down the chapter-title and summary projections in the same transaction, so
-    a deleted document leaves no orphan read-model rows (ADR-015/016/021).
-    Raises ``DocumentNotFound`` for an unknown id.
-    """
+    """Handler: drop the metadata and its read-model projections in one transaction,
+    then the blobs — metadata-first (ADR-004). Raises ``DocumentNotFound``."""
 
     def __init__(self, storage: DocumentStorage) -> None:
         self._storage = storage

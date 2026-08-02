@@ -15,17 +15,9 @@ logger = logging.getLogger(__name__)
 
 
 class EnrichDocument:
-    """Handler for ``EnrichDocument``: fill a document's cover, authors, and year,
-    driving PENDING/ENRICHING→ENRICHED/FAILED on the enrichment branch (ADR-028).
-
-    Best-effort and off the readability spine: it never touches ``status``, so a
-    failure leaves the document exactly as readable as before. A stale intent for an
-    already-deleted document is dropped, not raised (ADR-023); a delete landing between
-    a guard and its flush still raises ``StaleDataError`` out to the worker log.
-
-    The cover is chosen by ``source_url`` (mirroring extraction, ADR-027): a URL
-    document's cover is its ``og:image``, a blob document's is its rendered first
-    page — which also yields the docinfo the model's metadata falls back to.
+    """Handler for ``EnrichDocument``: fill the cover, authors, and year, driving
+    ENRICHING→ENRICHED/FAILED on the enrichment branch and never touching ``status``
+    (ADR-028). A stale intent for a deleted document is dropped, not raised (ADR-023).
     """
 
     def __init__(
@@ -80,9 +72,8 @@ class EnrichDocument:
         self, document: Document
     ) -> tuple[bytes | None, str | None, int | None]:
         """The cover bytes (or ``None``) and the merged authors/year. Priority is per
-        source (ADR-028 amendment): a PDF trusts the model first, its docinfo the
-        fallback; a URL trusts the page's structured byline first, the model the
-        fallback — a byline lives in page metadata, not the body the model reads."""
+        source: a PDF trusts the model over its docinfo, a URL trusts the page's
+        structured byline over the model (ADR-028)."""
         opening = (await self._storage.get(document.chapter_key(0))).decode()
         model = await self._metadata_inferer.infer(opening)
         if document.source_url is not None:

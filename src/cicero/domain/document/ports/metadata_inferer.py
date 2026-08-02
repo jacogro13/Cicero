@@ -4,24 +4,15 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class InferredMetadata:
-    """Browsing metadata read from a document's opening text (ADR-028).
-
-    Either field is ``None`` when the text does not reveal it; for a PDF the
-    ``CoverRenderer``'s docinfo fills whatever is left blank.
-    """
+    """Author(s) and year inferred from a document's opening text — either field
+    ``None`` when the text does not reveal it (ADR-028)."""
 
     authors: str | None = None
     year: int | None = None
 
 
 class MetadataInferer(ABC):
-    """Port: infer author(s) and year from a document's opening text (ADR-028).
-
-    Config-selected like the summarizer: ``MockMetadataInferer`` is the zero-config
-    default, an OpenAI-compatible adapter replaces it when ``LLM_BASE_URL`` is set.
-    """
+    """Port: infer author(s) and year from a document's opening text (ADR-028)."""
 
     @abstractmethod
-    async def infer(self, text: str) -> InferredMetadata:
-        """Infer metadata from the opening text; both fields may be ``None``."""
-        ...
+    async def infer(self, text: str) -> InferredMetadata: ...

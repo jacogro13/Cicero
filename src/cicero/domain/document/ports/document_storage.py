@@ -11,7 +11,7 @@ class DocumentStorage(ABC):
 
     @abstractmethod
     async def get(self, key: str) -> bytes:
-        """Return the bytes stored at ``key`` (ADR-009: extraction reads the source)."""
+        """Return the bytes stored at ``key``."""
         ...
 
     @abstractmethod

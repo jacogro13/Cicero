@@ -4,11 +4,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class RenderedCover:
-    """A rendered cover image plus the document metadata harvested alongside it.
-
-    A PDF is opened once for both: page 0 becomes the ``image`` (PNG) and the file's
-    own docinfo yields ``author``/``year``, the fallback the model fills over (ADR-028).
-    """
+    """A PDF's rendered cover PNG and its docinfo — ``author``/``year`` ``None``
+    when the file omits them (ADR-028)."""
 
     image: bytes
     author: str | None = None
@@ -16,11 +13,8 @@ class RenderedCover:
 
 
 class CoverRenderer(ABC):
-    """Port: render a PDF's cover image and read its docinfo (ADR-028).
-
-    Cover rendering is PDF-only — the URL branch has no page to render and takes the
-    ``ArticleCoverRenderer`` path instead. Concrete adapter: ``PyMuPDFCoverRenderer``.
-    """
+    """Port: render a PDF's cover image and read its docinfo (ADR-028). PDF-only —
+    a URL document takes the ``ArticleCoverRenderer`` path."""
 
     @abstractmethod
     async def render_cover(self, pdf: bytes) -> RenderedCover:

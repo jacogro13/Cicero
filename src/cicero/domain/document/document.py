@@ -18,11 +18,8 @@ from cicero.domain.messages import Event
 
 @dataclass
 class Document:
-    """A library document aggregate.
-
-    Build via :meth:`create`; change status through the ``mark_*`` methods
-    (ADR-002/014). Records domain events the UoW drains after commit (ADR-011).
-    """
+    """A library document aggregate. Build via :meth:`create` or
+    :meth:`create_from_url`; change status through the ``mark_*`` methods (ADR-002)."""
 
     id: DocumentId
     title: str
@@ -60,12 +57,8 @@ class Document:
     def create_from_url(
         cls, url: str, kind: DocumentKind = DocumentKind.ARTICLE
     ) -> Document:
-        """Ingest a web article: the link is the source, no blob (ADR-027).
-
-        Validates the scheme, derives a starting title from the URL, and enters the
-        same pipeline as an upload (raising ``DocumentUploaded``). ``kind`` defaults
-        to ARTICLE for a URL but is overridable (ADR-026).
-        """
+        """A document whose source is the link itself, with no blob — raises
+        ``InvalidDocumentUrl`` for anything but http(s) (ADR-027)."""
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             raise InvalidDocumentUrl(f"not an http(s) URL: {url!r}")
@@ -79,34 +72,26 @@ class Document:
         return document
 
     def set_kind(self, kind: DocumentKind) -> None:
-        """Correct the browsing classification — a plain mutation, no event or
-        pipeline effect (ADR-026)."""
         self.kind = kind
 
     @property
     def source_key(self) -> str:
-        """Storage key for the original source file (ADR-004)."""
         return self._storage_key("source")
 
     @property
     def storage_prefix(self) -> str:
-        """Key prefix under which all of a document's blobs live — deleting it removes
-        the source and every chapter blob in one sweep (ADR-004)."""
+        """Prefix covering every blob of this document — deleting it sweeps them all."""
         return f"documents/{self.id.value}/"
 
     def chapter_key(self, index: int) -> str:
-        """Storage key for a chapter's extracted Markdown — internal, never shown
-        to the reader (ADR-021)."""
         return self._storage_key(f"chapters/{index}")
 
     @property
     def cover_key(self) -> str:
-        """Storage key for the rendered cover image — under the document's prefix,
-        so delete sweeps it (ADR-028)."""
         return self._storage_key("cover")
 
     def _storage_key(self, name: str) -> str:
-        """Object-storage layout, a pure function of identity: ``documents/{id}/{name}``."""
+        """The storage layout, a pure function of identity: ``documents/{id}/{name}`` (ADR-004)."""
         return f"documents/{self.id.value}/{name}"
 
     def mark_extracting(self) -> None:
@@ -132,8 +117,6 @@ class Document:
     def apply_enrichment(
         self, *, authors: str | None, year: int | None, has_cover: bool
     ) -> None:
-        """Fill the browsing metadata — a plain mutation off the readability spine
-        (ADR-028)."""
         self.authors = authors
         self.year = year
         self.has_cover = has_cover
@@ -142,14 +125,14 @@ class Document:
         self.enrichment_status = EnrichmentStatus.ENRICHED
 
     def mark_enrichment_failed(self) -> None:
-        """Best-effort terminal: enrichment failed, but the document stays readable
-        — no event, no touch to ``status`` (ADR-028)."""
+        """Terminal on the enrichment branch only — ``status`` is untouched, so the
+        document stays as readable as before (ADR-028)."""
         self.enrichment_status = EnrichmentStatus.FAILED
 
 
 def _title_from_url(parsed) -> str:
-    """A readable starting title from a URL: the last path segment humanized, or the
-    host when there is no path. Enrichment refines it later (ADR-027)."""
+    """A starting title from a URL: the last path segment humanized, or the host
+    when there is no path."""
     segments = [segment for segment in parsed.path.split("/") if segment]
     if segments:
         words = segments[-1].rsplit(".", 1)[0].replace("-", " ").replace("_", " ").split()

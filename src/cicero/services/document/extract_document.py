@@ -16,14 +16,8 @@ logger = logging.getLogger(__name__)
 
 class ExtractDocument:
     """Handler for ``ExtractDocument``: extract the source into chapters, driving
-    EXTRACTING→EXTRACTED/FAILED (ADR-009/021/027). Each chapter's Markdown is stored
-    at its chapter key and the ordered titles via ``uow.chapters``. Raises
-    ``DocumentNotFound`` for an unknown id.
-
-    The source is chosen by ``source_url`` — a URL document is fetched and parsed as
-    one article chapter, a blob document PyMuPDF-extracted into TOC chapters — never
-    by ``kind``, which stays a browsing label (ADR-026/027).
-    """
+    EXTRACTING→EXTRACTED/FAILED (ADR-009/021). Storage-first — the chapter blobs land
+    before EXTRACTED commits. Raises ``DocumentNotFound``."""
 
     def __init__(
         self,
@@ -57,8 +51,7 @@ class ExtractDocument:
         if not await self._still_present(document_id, uow):
             return
 
-        # Storage-first (ADR-004): the blobs land before EXTRACTED commits, so an
-        # EXTRACTED document never points at a missing chapter.
+        # Storage-first, so an EXTRACTED document never points at a missing chapter.
         for index, chapter in enumerate(chapters):
             await self._storage.put(document.chapter_key(index), chapter.markdown.encode())
 
@@ -74,8 +67,8 @@ class ExtractDocument:
             await uow.commit()
 
     async def _extract_source(self, document: Document) -> list[Chapter]:
-        """A URL document is one fetched article chapter; a blob document its TOC
-        chapters. Branch on the source, not on kind (ADR-026/027)."""
+        """A URL document is one fetched article chapter, a blob document its TOC
+        chapters — branch on the source, never on ``kind`` (ADR-026/027)."""
         if document.source_url is not None:
             return [await self._article_extractor.extract(document.source_url)]
         source = await self._storage.get(document.source_key)

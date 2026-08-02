@@ -18,8 +18,8 @@ from cicero.domain.ports.unit_of_work import UnitOfWorkFactory
 
 @dataclass(frozen=True)
 class DocumentView:
-    """Read model of a document: identity, title, status, kind, source, and the
-    best-effort enrichment — authors, year, whether a cover exists (ADR-015/026/027/028)."""
+    """A document as the browsing surface sees it; the enrichment fields are
+    best-effort and may stay unset (ADR-026/027/028)."""
 
     id: DocumentId
     title: str
@@ -33,17 +33,14 @@ class DocumentView:
 
 @dataclass(frozen=True)
 class SummaryView:
-    """Read model of a document's summary — the read experience (ADR-016)."""
+    """A document's summary text (ADR-016)."""
 
     text: str
 
 
 @dataclass(frozen=True)
 class ChapterView:
-    """Read model of one chapter: its position, title, and summary (ADR-021).
-
-    ``summary`` is ``None`` until the chapter has been summarised.
-    """
+    """One chapter; ``summary`` is ``None`` until it has been summarised (ADR-021)."""
 
     index: int
     title: str
@@ -51,7 +48,7 @@ class ChapterView:
 
 
 async def list_documents(uow_factory: UnitOfWorkFactory) -> list[DocumentView]:
-    """Every stored document, as read models. No command, no commit (ADR-015)."""
+    """Every stored document."""
     async with uow_factory() as uow:
         documents = await uow.documents.find_all()
     return [
@@ -72,8 +69,7 @@ async def list_documents(uow_factory: UnitOfWorkFactory) -> list[DocumentView]:
 async def get_document_summary(
     uow_factory: UnitOfWorkFactory, document_id: DocumentId
 ) -> SummaryView | None:
-    """A document's summary for admin inspection — the per-chapter summaries joined
-    in order — or ``None`` if it has none yet (ADR-016/021)."""
+    """The per-chapter summaries joined in order, or ``None`` if it has none yet."""
     async with uow_factory() as uow:
         summaries = await uow.summaries.all(document_id)
     if not summaries:
@@ -85,11 +81,8 @@ async def get_document_summary(
 async def get_document_chapters(
     uow_factory: UnitOfWorkFactory, document_id: DocumentId
 ) -> list[ChapterView]:
-    """The reader's table of contents zipped with per-chapter summaries (ADR-021).
-
-    Empty when the document has no chapters yet; a chapter's ``summary`` is ``None``
-    until it has been summarised.
-    """
+    """The table of contents zipped with per-chapter summaries; empty until the
+    document has chapters (ADR-021)."""
     async with uow_factory() as uow:
         titles = await uow.chapters.list(document_id)
         summaries = await uow.summaries.all(document_id)
@@ -104,11 +97,8 @@ async def get_document_content(
     storage: DocumentStorage,
     document_id: DocumentId,
 ) -> str | None:
-    """The extracted Markdown for admin inspection — the chapter blobs assembled
-    under their titles — or ``None`` until the document has chapters (ADR-019/021).
-
-    Raises :class:`DocumentNotFound` for an unknown id.
-    """
+    """The chapter blobs assembled under their titles, or ``None`` until the document
+    has chapters (ADR-019). Raises :class:`DocumentNotFound` for an unknown id."""
     async with uow_factory() as uow:
         document = await uow.documents.find_by_id(document_id)
         if document is None:
@@ -128,11 +118,8 @@ async def get_document_file(
     storage: DocumentStorage,
     document_id: DocumentId,
 ) -> bytes | None:
-    """The original source file from storage, present from ``UPLOADED`` — or ``None``
-    for a URL document, which has no source blob (ADR-019/027).
-
-    Raises :class:`DocumentNotFound` for an unknown id.
-    """
+    """The original source file, or ``None`` for a URL document, which has no source
+    blob (ADR-027). Raises :class:`DocumentNotFound` for an unknown id."""
     async with uow_factory() as uow:
         document = await uow.documents.find_by_id(document_id)
     if document is None:
@@ -147,11 +134,9 @@ async def get_document_cover(
     storage: DocumentStorage,
     document_id: DocumentId,
 ) -> bytes | None:
-    """The rendered cover image bytes, or ``None`` until enrichment has stored one —
-    best-effort, so a document may never have a cover (ADR-028).
-
-    Raises :class:`DocumentNotFound` for an unknown id.
-    """
+    """The cover image bytes, or ``None`` when the document has no cover — enrichment
+    is best-effort, so it may never get one (ADR-028). Raises
+    :class:`DocumentNotFound` for an unknown id."""
     async with uow_factory() as uow:
         document = await uow.documents.find_by_id(document_id)
     if document is None:
