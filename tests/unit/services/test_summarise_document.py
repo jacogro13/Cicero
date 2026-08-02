@@ -61,6 +61,22 @@ class _ExplodingSummarizer(StubDocumentSummarizer):
         raise RuntimeError("summarization failed")
 
 
+class _DeletingExplodingSummarizer(StubDocumentSummarizer):
+    """A concurrent DELETE lands *and* summarization fails — the intersection of the
+    two paths the suite otherwise covers only separately."""
+
+    def __init__(self, uow_factory, document_id) -> None:
+        super().__init__("s")
+        self._uow_factory = uow_factory
+        self._document_id = document_id
+
+    async def summarize(self, markdown: str) -> str:
+        async with self._uow_factory() as uow:
+            await uow.documents.delete(await uow.documents.find_by_id(self._document_id))
+            await uow.commit()
+        raise RuntimeError("summarization failed")
+
+
 class TestSummariseDocument:
     async def test_marks_the_document_summarised(self):
         uow_factory = make_in_memory_uow_factory()
@@ -146,6 +162,20 @@ class TestSummariseDocument:
         async with uow_factory() as uow:
             assert await uow.documents.find_by_id(document.id) is None
         assert await views.get_document_summary(uow_factory, document.id) is None
+
+    async def test_delete_while_summarization_fails_drops_without_masking_the_failure(self):
+        # Mirrors extraction: the failure path re-reads the document to mark it FAILED,
+        # and a DELETE that won the race leaves nothing to mark. Dropping is not an
+        # error (ADR-014); raising would replace the RuntimeError that failed the stage.
+        uow_factory = make_in_memory_uow_factory()
+        storage = InMemoryDocumentStorage()
+        document = await _extracted_document(uow_factory, storage)
+        summarizer = _DeletingExplodingSummarizer(uow_factory, document.id)
+
+        await _summarise(uow_factory, storage, summarizer, document.id)
+
+        async with uow_factory() as uow:
+            assert await uow.documents.find_by_id(document.id) is None
 
     async def test_unknown_id_raises_document_not_found(self):
         summarise = SummariseDocument(

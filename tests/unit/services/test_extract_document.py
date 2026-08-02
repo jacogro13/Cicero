@@ -48,6 +48,22 @@ class _ExplodingExtractor(StubDocumentExtractor):
         raise RuntimeError("extraction failed")
 
 
+class _DeletingExplodingExtractor(StubDocumentExtractor):
+    """A concurrent DELETE lands *and* extraction fails — the intersection of the two
+    paths the suite otherwise covers only separately."""
+
+    def __init__(self, uow_factory, document_id) -> None:
+        super().__init__()
+        self._uow_factory = uow_factory
+        self._document_id = document_id
+
+    async def extract(self, data: bytes) -> list[Chapter]:
+        async with self._uow_factory() as uow:
+            await uow.documents.delete(await uow.documents.find_by_id(self._document_id))
+            await uow.commit()
+        raise RuntimeError("extraction failed")
+
+
 class _DeletingExtractor(StubDocumentExtractor):
     """Simulates a concurrent DELETE landing while extraction runs — the document is
     gone by the time the stage tries to write its result."""
@@ -143,6 +159,20 @@ class TestExtractDocument:
         async with uow_factory() as uow:
             assert await uow.documents.find_by_id(document.id) is None
         assert list(storage.objects) == [document.source_key]
+
+    async def test_delete_while_extraction_fails_drops_without_masking_the_failure(self):
+        # The failure path re-reads the document to mark it FAILED; if the DELETE won
+        # the race there is nothing left to mark. Dropping is not an error (ADR-014),
+        # and raising here would replace the RuntimeError that actually failed the stage.
+        uow_factory = make_in_memory_uow_factory()
+        storage = InMemoryDocumentStorage()
+        document = await _uploaded_document(uow_factory, storage)
+        extractor = _DeletingExplodingExtractor(uow_factory, document.id)
+
+        await _extract(uow_factory, storage, extractor, document.id)
+
+        async with uow_factory() as uow:
+            assert await uow.documents.find_by_id(document.id) is None
 
     async def test_unknown_id_raises_document_not_found(self):
         extract = ExtractDocument(
