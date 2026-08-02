@@ -12,7 +12,7 @@ dependencies = [
     "httpx>=0.28",
     "pymupdf>=1.24",
     "pymupdf4llm>=0.0.17",
-    "trafilatura>=1.12",
+    "trafilatura>=2.1",
     "alembic>=1.18.5",
 ]
 
@@ -20,7 +20,6 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
-    "httpx2>=2.4",
     "import-linter>=2.11",
     "testcontainers[postgres,minio]>=4.0",
 ]
