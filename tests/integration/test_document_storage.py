@@ -8,6 +8,7 @@ import pytest
 from botocore.exceptions import ClientError
 
 from cicero.adapters.storage.s3 import S3DocumentStorage
+from cicero.domain.document.exceptions import BlobNotFound
 
 
 @pytest.fixture
@@ -31,6 +32,12 @@ class TestS3DocumentStorage:
         await storage.put("documents/abc123/source", b"%PDF-1.4 source bytes")
 
         assert await storage.get("documents/abc123/source") == b"%PDF-1.4 source bytes"
+
+    async def test_get_raises_the_ports_error_for_a_missing_key(self, storage):
+        # The port owns its failure: a caller in services/ must be able to name a
+        # missing blob without importing botocore (ADR-001/008).
+        with pytest.raises(BlobNotFound):
+            await storage.get("documents/never-stored/source")
 
     async def test_delete_removes_the_object(self, storage, read_object):
         await storage.put("documents/abc123/source", b"%PDF-1.4 source bytes")

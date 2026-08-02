@@ -10,10 +10,8 @@ from types import SimpleNamespace
 import pytest
 import trafilatura
 
-from cicero.adapters.extraction.trafilatura import (
-    ArticleExtractionError,
-    TrafilaturaArticleExtractor,
-)
+from cicero.adapters.extraction.trafilatura import TrafilaturaArticleExtractor
+from cicero.domain.document.exceptions import ArticleExtractionFailed
 
 
 def _stub(monkeypatch, *, html="<html></html>", markdown="# T\n\nBody.", title="Real Title"):
@@ -40,11 +38,12 @@ class TestTrafilaturaArticleExtractor:
         assert chapter.title == "https://example.com/a"
 
     async def test_a_failed_fetch_raises(self, monkeypatch):
-        # trafilatura returns None when the page can't be fetched; the stage turns the
-        # raised error into FAILED (ADR-027), so it must not pass silently.
+        # trafilatura returns None when the page can't be fetched. The type raised is
+        # the port's own, declared in the domain, so a caller in services/ can name it
+        # without importing this adapter (ADR-001/008); the stage turns it into FAILED.
         _stub(monkeypatch, html=None)
 
-        with pytest.raises(ArticleExtractionError):
+        with pytest.raises(ArticleExtractionFailed):
             await TrafilaturaArticleExtractor().extract("https://example.com/missing")
 
     async def test_empty_extraction_raises(self, monkeypatch):
@@ -52,5 +51,5 @@ class TestTrafilaturaArticleExtractor:
         # empty document.
         _stub(monkeypatch, markdown=None)
 
-        with pytest.raises(ArticleExtractionError):
+        with pytest.raises(ArticleExtractionFailed):
             await TrafilaturaArticleExtractor().extract("https://example.com/empty")

@@ -7,7 +7,7 @@ from cicero.domain.document.chapter import Chapter
 from cicero.domain.document.document import Document
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.document_status import DocumentStatus
-from cicero.domain.document.exceptions import DocumentNotFound
+from cicero.domain.document.exceptions import BlobNotFound, DocumentNotFound
 from cicero.services import views
 
 from tests.fakes import InMemoryDocumentStorage, make_in_memory_uow_factory
@@ -212,6 +212,20 @@ class TestGetDocumentContent:
             await views.get_document_content(
                 make_in_memory_uow_factory(), InMemoryDocumentStorage(), DocumentId.new()
             )
+
+    async def test_a_missing_chapter_blob_raises_the_storage_ports_error(self):
+        # Chapter titles recorded but a blob gone is a broken invariant, not a client
+        # error: it surfaces as the port's own BlobNotFound — unmapped, so 500 (ADR-008)
+        # — rather than whichever exception the storage vendor happens to throw.
+        uow_factory, storage = make_in_memory_uow_factory(), InMemoryDocumentStorage()
+        document = Document.create("Clean Code")
+        async with uow_factory() as uow:
+            await uow.documents.save(document)
+            await uow.chapters.save(document.id, ["Chapter One"])
+            await uow.commit()
+
+        with pytest.raises(BlobNotFound):
+            await views.get_document_content(uow_factory, storage, document.id)
 
 
 class TestGetDocumentFile:
