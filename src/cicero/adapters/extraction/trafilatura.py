@@ -4,11 +4,8 @@ import anyio
 import trafilatura
 
 from cicero.domain.document.chapter import Chapter
+from cicero.domain.document.exceptions import ArticleExtractionFailed
 from cicero.domain.document.ports.article_extractor import ArticleExtractor
-
-
-class ArticleExtractionError(Exception):
-    """The page could not be fetched or yielded no article text (ADR-027)."""
 
 
 class TrafilaturaArticleExtractor(ArticleExtractor):
@@ -25,10 +22,10 @@ class TrafilaturaArticleExtractor(ArticleExtractor):
     def _extract(self, url: str) -> Chapter:
         html = trafilatura.fetch_url(url)
         if html is None:
-            raise ArticleExtractionError(f"could not fetch {url!r}")
+            raise ArticleExtractionFailed(f"could not fetch {url!r}")
         markdown = trafilatura.extract(html, output_format="markdown", with_metadata=False)
         if not markdown:
-            raise ArticleExtractionError(f"no article text at {url!r}")
+            raise ArticleExtractionFailed(f"no article text at {url!r}")
         metadata = trafilatura.extract_metadata(html)
         title = metadata.title if metadata and metadata.title else url
         return Chapter(title=title, markdown=markdown)

@@ -6,10 +6,13 @@ import anyio
 import boto3
 from botocore.exceptions import ClientError
 
+from cicero.domain.document.exceptions import BlobNotFound
 from cicero.domain.document.ports.document_storage import DocumentStorage
 
 # create_bucket on a bucket this client already owns is a success, not an error.
 _BUCKET_EXISTS = {"BucketAlreadyOwnedByYou", "BucketAlreadyExists"}
+# A missing object: MinIO/AWS answer NoSuchKey, some gateways only the bare 404.
+_NO_SUCH_KEY = {"NoSuchKey", "404"}
 
 
 class S3DocumentStorage(DocumentStorage):
@@ -56,7 +59,14 @@ class S3DocumentStorage(DocumentStorage):
         return await anyio.to_thread.run_sync(partial(self._get_sync, key))
 
     def _get_sync(self, key: str) -> bytes:
-        return self._client.get_object(Bucket=self._bucket, Key=key)["Body"].read()
+        try:
+            return self._client.get_object(Bucket=self._bucket, Key=key)["Body"].read()
+        except ClientError as exc:
+            # Translate the one failure the port declares; anything else is this
+            # store misbehaving and belongs to the caller as-is (ADR-004).
+            if exc.response.get("Error", {}).get("Code") in _NO_SUCH_KEY:
+                raise BlobNotFound(key) from exc
+            raise
 
     async def delete(self, key: str) -> None:
         # S3 delete_object is idempotent: deleting an absent key still succeeds.
