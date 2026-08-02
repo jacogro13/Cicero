@@ -5,7 +5,7 @@ import styles from "./UploadForm.module.css";
 
 type Source = "file" | "url";
 
-// The admin ingest console (ADR-022/031): upload a PDF, or ingest a web article by
+// The admin ingest console (ADR-017/022): upload a PDF, or ingest a web article by
 // URL (ADR-027). A URL always enters as an ARTICLE; the kind can be corrected later.
 export function UploadForm() {
   const upload = useUploadDocument();

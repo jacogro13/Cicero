@@ -20,7 +20,9 @@ in-process work (local LLM/TTS later) that exhausts memory. Slow reactions must 
 **An in-process serial `JobQueue` (`entrypoints/`) is the async transport.** Workers
 drain it at a fixed `concurrency` (default 1), so a batch upload can enqueue freely
 without ever running more than N heavy jobs. Created **per event loop in the
-lifespan** and held on `app.state` — never a module global, so no cross-loop leak.
+lifespan** and held by the consumer closures started there — never a module global, so
+no cross-loop leak. Only the bus goes on `app.state`, since only it is resolved per
+request.
 
 **The queue carries document-id intents, not commands.** The `DocumentUploaded`
 handler becomes `EnqueueExtraction`: it enqueues `event.document_id` and builds

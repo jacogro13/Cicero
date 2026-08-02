@@ -19,8 +19,9 @@ class OpenAIMetadataInferer(MetadataInferer):
     the zero-config default.
 
     Metadata lives in the opening, so only the first ``max_input_chars`` are sent —
-    no map-reduce. The reply is parsed as JSON; a malformed reply yields empty
-    metadata rather than raising, keeping enrichment best-effort.
+    no map-reduce. Malformed *content* yields empty metadata rather than raising; a
+    malformed *envelope* does raise (an error object at HTTP 200, empty ``choices``),
+    as does a non-2xx status. Enrichment is best-effort at the handler, which catches.
     """
 
     def __init__(

@@ -19,8 +19,9 @@ class EnrichDocument:
     driving PENDING/ENRICHING→ENRICHED/FAILED on the enrichment branch (ADR-028).
 
     Best-effort and off the readability spine: it never touches ``status``, so a
-    failure leaves the document exactly as readable as before. A stale intent for a
-    deleted document is dropped, not raised — the branch never fails past the worker.
+    failure leaves the document exactly as readable as before. A stale intent for an
+    already-deleted document is dropped, not raised (ADR-023); a delete landing between
+    a guard and its flush still raises ``StaleDataError`` out to the worker log.
 
     The cover is chosen by ``source_url`` (mirroring extraction, ADR-027): a URL
     document's cover is its ``og:image``, a blob document's is its rendered first

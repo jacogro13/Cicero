@@ -362,8 +362,9 @@ and issues the command that status calls for, so the command is born at an entry
 never synthesised in a handler. Each completed stage re-enqueues the document, so it
 walks the whole chain — upload *causes* extraction *causes* summarization — without any
 stage knowing the next. Upload returns immediately as `UPLOADED`; the document reaches
-`SUMMARISED`/`FAILED` asynchronously (clients poll `GET`). The queue lives on
-`app.state`, created per event loop in the lifespan.
+`SUMMARISED`/`FAILED` asynchronously (clients poll `GET`). The queue is created per
+event loop in the lifespan and held by the consumer closures it starts — only the bus
+goes on `app.state`, which is what the DI seam resolves.
 
 **The pipeline's order lives in one table**, `NEXT_COMMAND` in
 `entrypoints/pipeline.py`, mapping each status to the command that advances it (or to

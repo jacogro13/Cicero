@@ -61,7 +61,7 @@ class SummariseDocument:
     ) -> list[str] | None:
         """Summarise each chapter from its own stored Markdown, in order. Returns
         ``None`` if the document was deleted partway, so no further chapter is
-        summarised — bounding the work wasted on a document that is already gone."""
+        summarised — the call already in flight is still paid in full (ADR-023)."""
         summaries: list[str] = []
         for index in range(count):
             async with uow:
