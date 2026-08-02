@@ -161,7 +161,10 @@ class TestSummariseDocument:
         assert len(seen) == 1  # the second chapter is never summarised
         async with uow_factory() as uow:
             assert await uow.documents.find_by_id(document.id) is None
-        assert await views.get_document_summary(uow_factory, document.id) is None
+            # Asserted on the projection, not through the view: with the document
+            # gone the view answers DocumentNotFound, which would hide whether a
+            # summary row was left behind.
+            assert await uow.summaries.all(document.id) == {}
 
     async def test_delete_while_summarization_fails_drops_without_masking_the_failure(self):
         # Mirrors extraction: the failure path re-reads the document to mark it FAILED,

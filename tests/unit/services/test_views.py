@@ -101,12 +101,21 @@ class TestGetDocumentSummary:
         assert summary.text == "First.\n\nSecond."
 
     async def test_returns_none_when_the_document_has_no_summary(self):
-        assert (
+        uow_factory = make_in_memory_uow_factory()
+        document = Document.create("Clean Code")
+        async with uow_factory() as uow:
+            await uow.documents.save(document)
+            await uow.commit()
+
+        assert await views.get_document_summary(uow_factory, document.id) is None
+
+    async def test_raises_for_an_unknown_document(self):
+        # "No summary yet" and "no such document" are different answers; the summary
+        # read model would return empty for both (ADR-008).
+        with pytest.raises(DocumentNotFound):
             await views.get_document_summary(
                 make_in_memory_uow_factory(), DocumentId.new()
             )
-            is None
-        )
 
 
 class TestGetDocumentChapters:
@@ -142,12 +151,21 @@ class TestGetDocumentChapters:
         assert [c.summary for c in chapters] == [None, None]
 
     async def test_returns_an_empty_list_when_the_document_has_no_chapters(self):
-        assert (
+        uow_factory = make_in_memory_uow_factory()
+        document = Document.create("Clean Code")
+        async with uow_factory() as uow:
+            await uow.documents.save(document)
+            await uow.commit()
+
+        assert await views.get_document_chapters(uow_factory, document.id) == []
+
+    async def test_raises_for_an_unknown_document(self):
+        # An unextracted document and a nonexistent one both have no chapter rows;
+        # only the aggregate can tell them apart (ADR-008).
+        with pytest.raises(DocumentNotFound):
             await views.get_document_chapters(
                 make_in_memory_uow_factory(), DocumentId.new()
             )
-            == []
-        )
 
 
 async def _save_extracted(uow_factory, storage) -> Document:
