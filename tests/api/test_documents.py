@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from cicero.domain.document.document import Document
 from cicero.domain.document.document_status import DocumentStatus
+from cicero.domain.exceptions import DomainError
 from cicero.entrypoints.dependencies import (
     bootstrap,
     get_document_storage,
@@ -444,3 +445,21 @@ class TestDomainErrorMapping:
         )
 
         assert response.status_code == 422
+
+    def test_an_unmapped_domain_error_surfaces_as_500(self):
+        # ADR-008's other half: a DomainError with no registry entry was never given a
+        # client meaning, so it is an oversight and must not be dressed up as a 4xx.
+        # BlobNotFound is the real inhabitant (a missing blob is a broken invariant);
+        # a local subclass keeps the test independent of which errors stay unmapped.
+        class Unmapped(DomainError):
+            pass
+
+        app = create_app()
+
+        @app.get("/boom")
+        async def boom() -> None:
+            raise Unmapped("no registry entry")
+
+        response = TestClient(app, raise_server_exceptions=False).get("/boom")
+
+        assert response.status_code == 500
