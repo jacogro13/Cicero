@@ -6,14 +6,41 @@ lookup, the scheme/content-type/size guards, and the best-effort None on failure
 with no network.
 """
 
+import socket
 from types import SimpleNamespace
 
 import httpx
+import pytest
 import trafilatura
 
 from cicero.adapters.enrichment.cover.trafilatura import TrafilaturaArticleCoverRenderer
 
 _JPEG = b"\xff\xd8\xff\xe0JPEGDATA"
+
+# The hostnames these tests use, and what they resolve to. `internal.test` is the
+# interesting one: a name whose address is private, which no check on the URL string
+# can catch.
+_HOSTS = {
+    "cdn.test": "93.184.216.34",
+    "other-cdn.test": "93.184.216.35",
+    "internal.test": "10.0.0.5",
+}
+
+
+@pytest.fixture(autouse=True)
+def _resolver(monkeypatch):
+    """Resolve the test hostnames in-process — a unit test must not touch DNS."""
+
+    def getaddrinfo(host, port, *args, **kwargs):
+        try:
+            socket.inet_aton(host)
+        except OSError:
+            if host not in _HOSTS:
+                raise socket.gaierror(f"unstubbed host: {host}") from None
+            host = _HOSTS[host]
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (host, port or 0))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
 
 
 def _stub_page(
@@ -38,6 +65,17 @@ def _image_transport(
 ) -> httpx.MockTransport:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(status, content=content, headers={"content-type": content_type})
+
+    return httpx.MockTransport(handler)
+
+
+def _redirecting_transport(*, to: str) -> httpx.MockTransport:
+    """Every URL but ``to`` answers with a 302 to it; ``to`` serves the image."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == to:
+            return httpx.Response(200, content=_JPEG, headers={"content-type": "image/jpeg"})
+        return httpx.Response(302, headers={"location": to})
 
     return httpx.MockTransport(handler)
 
@@ -109,3 +147,49 @@ class TestTrafilaturaArticleCoverRenderer:
         renderer = TrafilaturaArticleCoverRenderer(transport=_image_transport())
 
         assert (await renderer.fetch_cover("https://example.com/a")).image is None
+
+    async def test_an_image_url_on_a_link_local_address_returns_no_cover(self, monkeypatch):
+        # http:// passes any scheme check, so the scheme is not the guard that matters:
+        # this is the cloud metadata endpoint, and its body would be stored as a cover.
+        _stub_page(monkeypatch, image="http://169.254.169.254/latest/meta-data/")
+        renderer = TrafilaturaArticleCoverRenderer(transport=_image_transport())
+
+        assert (await renderer.fetch_cover("https://example.com/a")).image is None
+
+    async def test_an_image_host_resolving_to_a_private_address_returns_no_cover(
+        self, monkeypatch
+    ):
+        # Nothing about this URL's text is suspicious — only its address is. The guard
+        # has to resolve the host, not inspect the string.
+        _stub_page(monkeypatch, image="https://internal.test/cover.jpg")
+        renderer = TrafilaturaArticleCoverRenderer(transport=_image_transport())
+
+        assert (await renderer.fetch_cover("https://example.com/a")).image is None
+
+    async def test_a_redirect_into_a_private_address_returns_no_cover(self, monkeypatch):
+        # The og:image is on an ordinary public CDN; the 302 is where it goes private.
+        # A check applied once, before the first request, never sees this hop.
+        _stub_page(monkeypatch, image="https://cdn.test/cover.jpg")
+        renderer = TrafilaturaArticleCoverRenderer(
+            transport=_redirecting_transport(to="http://169.254.169.254/latest/meta-data/")
+        )
+
+        assert (await renderer.fetch_cover("https://example.com/a")).image is None
+
+    async def test_an_internal_page_may_still_illustrate_itself(self, monkeypatch):
+        # Same private host as the test above, but here the operator typed that address
+        # themselves — the page's own image adds no reach they had not already granted.
+        _stub_page(monkeypatch, image="http://internal.test/logo.png")
+        renderer = TrafilaturaArticleCoverRenderer(transport=_image_transport())
+
+        assert (await renderer.fetch_cover("http://internal.test/page")).image == _JPEG
+
+    async def test_a_redirect_between_public_hosts_still_returns_the_cover(self, monkeypatch):
+        # The counterweight: CDNs redirect constantly, so the fix must re-check each hop
+        # rather than simply refusing to follow them.
+        _stub_page(monkeypatch, image="https://cdn.test/cover.jpg")
+        renderer = TrafilaturaArticleCoverRenderer(
+            transport=_redirecting_transport(to="https://other-cdn.test/cover.jpg")
+        )
+
+        assert (await renderer.fetch_cover("https://example.com/a")).image == _JPEG
