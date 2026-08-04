@@ -507,7 +507,8 @@ sequenceDiagram
 
 Two user-facing surfaces split **by role**: the **reader** — the daily-use read
 experience, at the root `/` — and the **admin console** at `/admin` (ingest a PDF
-upload or a web-article URL, list, delete, inspect the raw extraction). They share one **`frontend/` tree, outside the
+upload or a web-article URL, list, correct a misclassified `kind`, delete, inspect the
+raw extraction). They share one **`frontend/` tree, outside the
 hexagon**: React + TypeScript built by Vite, tested with Vitest + Testing Library,
 styled with CSS Modules, routed by react-router. The split is **by route, not by build
 artifact** — one bundle, one client, one CI node job; import-linter governs the Python
@@ -533,7 +534,9 @@ flowchart LR
 refetches while any document is still non-terminal and goes idle once every document is
 `SUMMARISED`/`FAILED`, the client-side stand-in for the still-deferred push channel;
 the reader's chapter view polls the same way while any chapter awaits its summary.
-Upload, URL ingest, and delete are admin mutations that invalidate the list. The **reader** lists the
+Upload, URL ingest, kind correction, and delete are admin mutations that invalidate the
+list — the correction is a segmented Book | Article toggle per row, the write side of the
+source-derived default (ADR-026). The **reader** lists the
 library behind a **Books | Articles switch** that scopes the grid to one `kind`
 (defaulting to Books, ADR-026) and, per document, navigates chapters by their table of
 contents (`GET /api/documents/{id}/chapters`), reading each chapter's summary as
