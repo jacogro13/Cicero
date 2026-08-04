@@ -52,45 +52,51 @@ export function DocumentRow({ doc }: { doc: DocumentResponse }) {
           </button>
         ))}
       </div>
-      <StatusBadge status={doc.status} />
-      <div className={styles.actions}>
-        {doc.status === "SUMMARISED" && (
-          <button className={styles.view} onClick={() => setShowSummary(true)}>
-            View summary
-          </button>
-        )}
-        {hasExtractedContent(doc) && (
-          <button className={styles.view} onClick={() => setShowContent(true)}>
-            View extracted
-          </button>
-        )}
-        {doc.source_url ? (
-          <a
-            className={`${styles.view} ${styles.viewLink}`}
-            href={doc.source_url}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Visit article
-          </a>
-        ) : (
-          <a
-            className={`${styles.view} ${styles.viewLink}`}
-            href={fileUrl(doc.id)}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            View PDF
-          </a>
-        )}
+      <span className={styles.status}>
+        <StatusBadge status={doc.status} />
+      </span>
+      {doc.status === "SUMMARISED" && (
         <button
-          className={styles.delete}
-          onClick={() => del.mutate(doc.id)}
-          disabled={del.isPending}
+          className={`${styles.view} ${styles.summaryAction}`}
+          onClick={() => setShowSummary(true)}
         >
-          Delete
+          View summary
         </button>
-      </div>
+      )}
+      {hasExtractedContent(doc) && (
+        <button
+          className={`${styles.view} ${styles.extractedAction}`}
+          onClick={() => setShowContent(true)}
+        >
+          View extracted
+        </button>
+      )}
+      {doc.source_url ? (
+        <a
+          className={`${styles.view} ${styles.viewLink} ${styles.sourceAction}`}
+          href={doc.source_url}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Visit article
+        </a>
+      ) : (
+        <a
+          className={`${styles.view} ${styles.viewLink} ${styles.sourceAction}`}
+          href={fileUrl(doc.id)}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          View PDF
+        </a>
+      )}
+      <button
+        className={`${styles.delete} ${styles.deleteAction}`}
+        onClick={() => del.mutate(doc.id)}
+        disabled={del.isPending}
+      >
+        Delete
+      </button>
 
       {showSummary && (
         <SummaryPanel
