@@ -56,5 +56,11 @@ export const http = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
+  patchJson: <T>(path: string, body: unknown) =>
+    request<T>(path, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
   delete: (path: string) => request<void>(path, { method: "DELETE" }),
 };

@@ -1,6 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { deleteDocument, ingestUrl, uploadDocument } from "../api/documents";
+import {
+  deleteDocument,
+  ingestUrl,
+  setDocumentKind,
+  uploadDocument,
+  type DocumentKind,
+} from "../api/documents";
 import { documentsKey } from "./useDocuments";
 
 // Upload a document, then invalidate the list so it refetches and starts
@@ -21,6 +27,18 @@ export function useIngestUrl() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (url: string) => ingestUrl(url),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: documentsKey }),
+  });
+}
+
+// Correct a document's browsing kind (ADR-026); the list refetches so the row
+// reflects the stored kind rather than a locally assumed one.
+export function useSetDocumentKind() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, kind }: { id: string; kind: DocumentKind }) =>
+      setDocumentKind(id, kind),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: documentsKey }),
   });

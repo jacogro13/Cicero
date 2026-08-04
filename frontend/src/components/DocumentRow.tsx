@@ -3,22 +3,55 @@ import { useState } from "react";
 import {
   fileUrl,
   hasExtractedContent,
+  type DocumentKind,
   type DocumentResponse,
 } from "../api/documents";
-import { useDeleteDocument } from "../hooks/useDocumentMutations";
+import {
+  useDeleteDocument,
+  useSetDocumentKind,
+} from "../hooks/useDocumentMutations";
 import { ContentPanel } from "./ContentPanel";
 import { StatusBadge } from "./StatusBadge";
 import { SummaryPanel } from "./SummaryPanel";
 import styles from "./DocumentRow.module.css";
 
+const KINDS: { value: DocumentKind; label: string }[] = [
+  { value: "BOOK", label: "Book" },
+  { value: "ARTICLE", label: "Article" },
+];
+
 export function DocumentRow({ doc }: { doc: DocumentResponse }) {
   const del = useDeleteDocument();
+  const setKind = useSetDocumentKind();
   const [showSummary, setShowSummary] = useState(false);
   const [showContent, setShowContent] = useState(false);
 
   return (
     <li className={styles.row}>
       <span className={styles.title}>{doc.title}</span>
+      {/* Kind is derived from the source at ingest and can be wrong (a paper
+          uploaded as a PDF is not a book); correcting it here is the only way to
+          move a document to the other reader shelf (ADR-026). */}
+      <div
+        className={styles.kind}
+        role="group"
+        aria-label={`Kind of ${doc.title}`}
+      >
+        {KINDS.map(({ value, label }) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={doc.kind === value}
+            className={
+              doc.kind === value ? styles.kindActive : styles.kindOption
+            }
+            disabled={doc.kind === value || setKind.isPending}
+            onClick={() => setKind.mutate({ id: doc.id, kind: value })}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <StatusBadge status={doc.status} />
       <div className={styles.actions}>
         {doc.status === "SUMMARISED" && (

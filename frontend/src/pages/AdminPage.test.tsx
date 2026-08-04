@@ -14,6 +14,7 @@ vi.mock("../api/documents", async (importOriginal) => {
     listDocuments: vi.fn(),
     uploadDocument: vi.fn(),
     ingestUrl: vi.fn(),
+    setDocumentKind: vi.fn(),
     deleteDocument: vi.fn(),
     getSummary: vi.fn(),
     getContent: vi.fn(),
@@ -149,6 +150,60 @@ describe("AdminPage", () => {
 
     await waitFor(() =>
       expect(mockedApi.deleteDocument).toHaveBeenCalledWith("1"),
+    );
+  });
+
+  it("shows which kind a document is classified as", async () => {
+    mockedApi.listDocuments.mockResolvedValue([
+      {
+        id: "1",
+        title: "Clean Architecture",
+        status: "SUMMARISED",
+        kind: "ARTICLE",
+        source_url: "https://example.com/blog/clean-architecture",
+        authors: null,
+        year: null,
+        has_cover: false,
+      },
+    ]);
+
+    renderWithClient(<App />, "/admin");
+    await screen.findByText("Clean Architecture");
+
+    expect(screen.getByRole("button", { name: "Article" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Book" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("corrects a misclassified document's kind", async () => {
+    // A journal paper uploaded as a PDF defaults to BOOK (ADR-026) and would sit on
+    // the wrong reader shelf until an admin corrects it.
+    const user = userEvent.setup();
+    const paper = {
+      id: "1",
+      title: "A Note on Distributed Databases",
+      status: "SUMMARISED" as const,
+      kind: "BOOK" as const,
+      source_url: null,
+      authors: null,
+      year: null,
+      has_cover: false,
+    };
+    mockedApi.listDocuments.mockResolvedValue([paper]);
+    mockedApi.setDocumentKind.mockResolvedValue({ ...paper, kind: "ARTICLE" });
+
+    renderWithClient(<App />, "/admin");
+    await screen.findByText("A Note on Distributed Databases");
+
+    await user.click(screen.getByRole("button", { name: "Article" }));
+
+    await waitFor(() =>
+      expect(mockedApi.setDocumentKind).toHaveBeenCalledWith("1", "ARTICLE"),
     );
   });
 

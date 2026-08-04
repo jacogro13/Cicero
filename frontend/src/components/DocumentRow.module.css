@@ -18,6 +18,47 @@
   white-space: nowrap;
 }
 
+/* Kind is a correction, not an action — a segmented toggle mirroring the reader's
+   Books | Articles switch, so the two surfaces read as the same control. */
+.kind {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 0.15rem;
+  gap: 0.15rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  background: #f9fafb;
+}
+
+.kindOption,
+.kindActive {
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.25rem 0.6rem;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.kindActive {
+  background: #fff;
+  color: #111827;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  cursor: default;
+}
+
+.kindOption:hover:not(:disabled) {
+  color: #4338ca;
+}
+
+.kindOption:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .actions {
   display: flex;
   align-items: center;

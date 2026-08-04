@@ -80,6 +80,16 @@ export function ingestUrl(url: string): Promise<DocumentResponse> {
   return http.postJson<DocumentResponse>("/documents/url", { url });
 }
 
+// Correct a misclassified document (ADR-026). The kind is derived from the source
+// at ingest, so a journal-article PDF lands as a BOOK; correcting it only moves the
+// document to the other shelf — no pipeline stage reads kind.
+export function setDocumentKind(
+  id: string,
+  kind: DocumentKind,
+): Promise<DocumentResponse> {
+  return http.patchJson<DocumentResponse>(`/documents/${id}`, { kind });
+}
+
 export function deleteDocument(id: string): Promise<void> {
   return http.delete(`/documents/${id}`);
 }
