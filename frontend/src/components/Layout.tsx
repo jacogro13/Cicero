@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 
 import styles from "./Layout.module.css";
 
@@ -8,8 +8,10 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
   isActive ? `${styles.link} ${styles.active}` : styles.link;
 
 export function Layout() {
+  const wide = useLocation().pathname.startsWith("/admin");
+
   return (
-    <div className={styles.shell}>
+    <div className={wide ? `${styles.shell} ${styles.wide}` : styles.shell}>
       <header className={styles.header}>
         <NavLink to="/" className={styles.brand}>
           Cicero

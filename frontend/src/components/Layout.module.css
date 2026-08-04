@@ -4,6 +4,13 @@
   padding: 1.5rem 1.5rem 4rem;
 }
 
+/* The admin console is a dense list — each row carries a kind toggle, a status badge
+   and up to four actions — so it gets a wider measure. The reader keeps the narrow one:
+   it is a reading surface, where a short line length is the point. */
+.wide {
+  max-width: 72rem;
+}
+
 .header {
   display: flex;
   align-items: baseline;
