@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import httpx
 
+from cicero.adapters.http.retry import DEFAULT_RETRY, RetryPolicy, post_json
 from cicero.domain.document.content_chunking import split_for_budget
 from cicero.domain.document.ports.document_summarizer import DocumentSummarizer
 
@@ -26,6 +27,8 @@ class OpenAISummarizer(DocumentSummarizer):
     Input longer than ``max_input_chars`` is summarised by **map-reduce** (ADR-020):
     ``split_for_budget`` slices it, each slice is summarised, and the parts are
     synthesised into one summary. Input that fits is a single call.
+
+    Every call is retried within ``retry`` while it fails transiently (ADR-029).
     """
 
     def __init__(
@@ -36,6 +39,7 @@ class OpenAISummarizer(DocumentSummarizer):
         api_key: str | None = None,
         max_input_chars: int = 100_000,
         timeout: float = 60.0,
+        retry: RetryPolicy = DEFAULT_RETRY,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._url = base_url.rstrip("/") + "/chat/completions"
@@ -43,6 +47,7 @@ class OpenAISummarizer(DocumentSummarizer):
         self._api_key = api_key
         self._max_input_chars = max_input_chars
         self._timeout = httpx.Timeout(timeout)
+        self._retry = retry
         self._transport = transport
 
     async def summarize(self, markdown: str) -> str:
@@ -67,6 +72,7 @@ class OpenAISummarizer(DocumentSummarizer):
                 {"role": "user", "content": content},
             ],
         }
-        response = await client.post(self._url, json=payload, headers=headers)
-        response.raise_for_status()
+        response = await post_json(
+            client, self._url, json=payload, headers=headers, policy=self._retry
+        )
         return response.json()["choices"][0]["message"]["content"]

@@ -9,6 +9,7 @@ import anyio
 import httpx
 import trafilatura
 
+from cicero.adapters.http.retry import DEFAULT_RETRY, RetryPolicy, with_retry
 from cicero.domain.document.ports.article_cover_renderer import (
     ArticleCoverRenderer,
     FetchedArticle,
@@ -37,10 +38,12 @@ class TrafilaturaArticleCoverRenderer(ArticleCoverRenderer):
         *,
         max_bytes: int = 5_000_000,
         timeout: float = 15.0,
+        retry: RetryPolicy = DEFAULT_RETRY,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._max_bytes = max_bytes
         self._timeout = httpx.Timeout(timeout)
+        self._retry = retry
         self._transport = transport
 
     async def fetch_cover(self, url: str) -> FetchedArticle:
@@ -67,8 +70,11 @@ class TrafilaturaArticleCoverRenderer(ArticleCoverRenderer):
             async with httpx.AsyncClient(
                 timeout=self._timeout, transport=self._transport, follow_redirects=False
             ) as client:
-                response = await self._get(client, image_url, allowed=allowed)
+                response = await with_retry(
+                    lambda: self._get(client, image_url, allowed=allowed), self._retry
+                )
         except httpx.HTTPError:
+            # Best-effort survives the retry: a failure that outlasts it is still no cover.
             return None
         if response is None:
             return None

@@ -4,6 +4,7 @@ import json
 
 import httpx
 
+from cicero.adapters.http.retry import DEFAULT_RETRY, RetryPolicy, post_json
 from cicero.domain.document.ports.metadata_inferer import InferredMetadata, MetadataInferer
 
 _SYSTEM_PROMPT = (
@@ -21,7 +22,8 @@ class OpenAIMetadataInferer(MetadataInferer):
     Metadata lives in the opening, so only the first ``max_input_chars`` are sent —
     no map-reduce. Malformed *content* yields empty metadata rather than raising; a
     malformed *envelope* does raise (an error object at HTTP 200, empty ``choices``),
-    as does a non-2xx status. Enrichment is best-effort at the handler, which catches.
+    as does a non-2xx status that survives ``retry`` (ADR-029). Enrichment is
+    best-effort at the handler, which catches.
     """
 
     def __init__(
@@ -32,6 +34,7 @@ class OpenAIMetadataInferer(MetadataInferer):
         api_key: str | None = None,
         max_input_chars: int = 8_000,
         timeout: float = 60.0,
+        retry: RetryPolicy = DEFAULT_RETRY,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._url = base_url.rstrip("/") + "/chat/completions"
@@ -39,6 +42,7 @@ class OpenAIMetadataInferer(MetadataInferer):
         self._api_key = api_key
         self._max_input_chars = max_input_chars
         self._timeout = httpx.Timeout(timeout)
+        self._retry = retry
         self._transport = transport
 
     async def infer(self, text: str) -> InferredMetadata:
@@ -51,8 +55,9 @@ class OpenAIMetadataInferer(MetadataInferer):
             ],
         }
         async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
-            response = await client.post(self._url, json=payload, headers=headers)
-            response.raise_for_status()
+            response = await post_json(
+                client, self._url, json=payload, headers=headers, policy=self._retry
+            )
         return _parse(response.json()["choices"][0]["message"]["content"])
 
 
