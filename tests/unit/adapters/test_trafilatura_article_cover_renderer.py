@@ -14,6 +14,8 @@ import pytest
 import trafilatura
 
 from cicero.adapters.enrichment.cover.trafilatura import TrafilaturaArticleCoverRenderer
+from cicero.adapters.http.retry import RetryPolicy
+from tests.fakes.http import replaying_transport, status
 
 _JPEG = b"\xff\xd8\xff\xe0JPEGDATA"
 
@@ -183,6 +185,37 @@ class TestTrafilaturaArticleCoverRenderer:
         renderer = TrafilaturaArticleCoverRenderer(transport=_image_transport())
 
         assert (await renderer.fetch_cover("http://internal.test/page")).image == _JPEG
+
+    async def test_a_transient_failure_on_the_image_is_retried(self, monkeypatch):
+        _stub_page(monkeypatch, image="https://cdn.test/cover.jpg")
+        requests: list[httpx.Request] = []
+        renderer = TrafilaturaArticleCoverRenderer(
+            retry=RetryPolicy(backoff=0.0),
+            transport=replaying_transport(
+                [
+                    status(503),
+                    lambda: httpx.Response(
+                        200, content=_JPEG, headers={"content-type": "image/jpeg"}
+                    ),
+                ],
+                requests,
+            ),
+        )
+
+        assert (await renderer.fetch_cover("https://example.com/a")).image == _JPEG
+        assert len(requests) == 2
+
+    async def test_exhausted_retries_still_leave_the_cover_best_effort(self, monkeypatch):
+        # Bounded, and still no raise: enrichment completes with no cover (ADR-028/029).
+        _stub_page(monkeypatch, image="https://cdn.test/cover.jpg")
+        requests: list[httpx.Request] = []
+        renderer = TrafilaturaArticleCoverRenderer(
+            retry=RetryPolicy(backoff=0.0),
+            transport=replaying_transport([status(503)], requests),
+        )
+
+        assert (await renderer.fetch_cover("https://example.com/a")).image is None
+        assert len(requests) == 3
 
     async def test_a_redirect_between_public_hosts_still_returns_the_cover(self, monkeypatch):
         # The counterweight: CDNs redirect constantly, so the fix must re-check each hop

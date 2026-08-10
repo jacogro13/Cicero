@@ -13,7 +13,9 @@ import httpx
 
 from cicero.adapters.enrichment.metadata.mock import MockMetadataInferer
 from cicero.adapters.enrichment.metadata.openai import OpenAIMetadataInferer
+from cicero.adapters.http.retry import RetryPolicy
 from cicero.domain.document.ports.metadata_inferer import InferredMetadata
+from tests.fakes.http import replaying_transport
 
 
 async def test_mock_infers_nothing():
@@ -64,6 +66,32 @@ class TestOpenAIMetadataInferer:
         )
 
         assert await inferer.infer("text") == InferredMetadata()
+
+    async def test_a_rate_limited_call_is_retried(self):
+        # 429 is the one 4xx worth repeating: the server said later, not never (ADR-029).
+        requests: list[httpx.Request] = []
+        inferer = OpenAIMetadataInferer(
+            base_url="https://llm.test/v1",
+            model="m",
+            retry=RetryPolicy(backoff=0.0),
+            transport=replaying_transport(
+                [
+                    lambda: httpx.Response(429, headers={"retry-after": "0"}),
+                    lambda: httpx.Response(
+                        200,
+                        json={
+                            "choices": [
+                                {"message": {"content": json.dumps({"authors": "Jane Doe"})}}
+                            ]
+                        },
+                    ),
+                ],
+                requests,
+            ),
+        )
+
+        assert await inferer.infer("text") == InferredMetadata(authors="Jane Doe")
+        assert len(requests) == 2
 
     async def test_only_the_opening_slice_is_sent(self):
         capture: dict = {}

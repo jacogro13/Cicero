@@ -1,6 +1,6 @@
 """`OpenAISummarizer` against a stubbed httpx transport (ADR-018): assert the
-Chat Completions request shape and that the reply's content is returned. No
-network, no live LLM.
+Chat Completions request shape, that the reply's content is returned, and that a
+flaky upstream is retried within bounds (ADR-029). No network, no live LLM.
 """
 
 from __future__ import annotations
@@ -8,8 +8,11 @@ from __future__ import annotations
 import json
 
 import httpx
+import pytest
 
+from cicero.adapters.http.retry import RetryPolicy
 from cicero.adapters.summarization.openai import OpenAISummarizer
+from tests.fakes.http import replaying_transport, status
 
 _COMPLETION = {"choices": [{"message": {"role": "assistant", "content": "A real summary."}}]}
 
@@ -99,3 +102,60 @@ async def test_oversized_input_maps_each_chunk_then_reduces():
     reduce_input = reduce_request["messages"][-1]["content"]
     assert "part 1" in reduce_input and "part 2" in reduce_input
     assert summary == "part 3"
+
+
+# Backoff zeroed so the suite never sleeps; the delay itself is pinned in
+# `test_outbound_retry.py`.
+_NO_WAIT = RetryPolicy(backoff=0.0)
+
+
+def _completion() -> httpx.Response:
+    return httpx.Response(200, json=_COMPLETION)
+
+
+def _summarizer(outcomes, requests) -> OpenAISummarizer:
+    return OpenAISummarizer(
+        base_url="https://llm.test/v1",
+        model="m",
+        retry=_NO_WAIT,
+        transport=replaying_transport(outcomes, requests),
+    )
+
+
+class TestRetry:
+    async def test_a_transient_failure_is_retried_and_the_summary_still_returns(self):
+        requests: list[httpx.Request] = []
+        summarizer = _summarizer([status(502), status(503), _completion], requests)
+
+        assert await summarizer.summarize("body") == "A real summary."
+        assert len(requests) == 3
+
+    async def test_a_connection_timeout_is_retried(self):
+        requests: list[httpx.Request] = []
+
+        def timeout() -> httpx.Response:
+            raise httpx.ConnectTimeout("upstream did not answer")
+
+        summarizer = _summarizer([timeout, _completion], requests)
+
+        assert await summarizer.summarize("body") == "A real summary."
+        assert len(requests) == 2
+
+    async def test_the_attempts_are_bounded(self):
+        # An upstream that is down stays down: the call must fail rather than loop, so
+        # the handler can commit FAILED (ADR-014).
+        requests: list[httpx.Request] = []
+        summarizer = _summarizer([status(500)], requests)
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await summarizer.summarize("body")
+        assert len(requests) == 3
+
+    async def test_a_client_error_is_not_retried(self):
+        # 400 means the request itself is wrong — repeating it only spends the budget.
+        requests: list[httpx.Request] = []
+        summarizer = _summarizer([status(400)], requests)
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await summarizer.summarize("body")
+        assert len(requests) == 1
