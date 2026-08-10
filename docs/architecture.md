@@ -305,10 +305,16 @@ paragraph packing, fenced code kept atomic) slices it, each slice is summarised,
 the parts are synthesised into one summary; input that fits stays a single call. The
 chunker is framework-free domain code, placed there so the future retrieval index can
 reuse it. Wiring the stage cost one status pair, one `NEXT_COMMAND` entry, and one
-subscription of `AdvanceDocument` to `ExtractionCompleted` — the bus payoff. See
+subscription of `AdvanceDocument` to `ExtractionCompleted` — the bus payoff.
+
+Every call that leaves the process over `httpx` — both LLM adapters and the cover fetch
+below — goes through one shared **bounded retry**: three attempts over connection
+errors, timeouts, 429 and 5xx, with jittered backoff and no retry on any other 4xx, so
+a transient blip no longer costs a document (ADR-029). See
 **[ADR-016](adr/016-ai-summaries-and-the-summary-read-model.md)**,
-**[ADR-018](adr/018-openai-compatible-summarizer-adapter.md)**, and
-**[ADR-020](adr/020-map-reduce-summarization-for-oversized-documents.md)**.
+**[ADR-018](adr/018-openai-compatible-summarizer-adapter.md)**,
+**[ADR-020](adr/020-map-reduce-summarization-for-oversized-documents.md)**, and
+**[ADR-029](adr/029-bounded-retry-for-outbound-http.md)**.
 
 ## Enrichment: cover, authors, year — the first branch
 
@@ -694,3 +700,4 @@ references a decision made later.
 - [ADR-026 — Documents are classified as Books or Articles](adr/026-document-kind.md)
 - [ADR-027 — Ingesting a web article by URL](adr/027-url-ingest.md)
 - [ADR-028 — Enrichment: cover, authors, year](adr/028-enrichment-cover-authors-year.md)
+- [ADR-029 — Bounded retry for outbound HTTP](adr/029-bounded-retry-for-outbound-http.md)
