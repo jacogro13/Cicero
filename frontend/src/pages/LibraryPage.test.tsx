@@ -6,6 +6,7 @@ import { App } from "../App";
 import * as api from "../api/documents";
 import type { DocumentResponse } from "../api/documents";
 import { renderWithClient } from "../test-utils";
+import styles from "./LibraryPage.module.css";
 
 vi.mock("../api/documents", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/documents")>();
@@ -92,6 +93,22 @@ describe("LibraryPage", () => {
     });
     expect(cover).toHaveAttribute("src", "/api/documents/7/cover");
     expect(screen.getByText("Robert C. Martin · 2008")).toBeInTheDocument();
+  });
+
+  it("gives an article's cover the landscape shape its og:image has", async () => {
+    mockedApi.listDocuments.mockResolvedValue([
+      doc({ id: "9", title: "A Blog Post", kind: "ARTICLE", has_cover: true }),
+    ]);
+
+    renderWithClient(<App />, "/");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Articles" }),
+    );
+
+    const cover = await screen.findByRole("img", {
+      name: /Cover of A Blog Post/,
+    });
+    expect(cover).toHaveClass(styles.coverWide);
   });
 
   it("renders no cover image for a document enrichment has not covered", async () => {

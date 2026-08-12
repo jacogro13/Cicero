@@ -26,6 +26,11 @@ const attribution = (doc: DocumentResponse): string | null => {
   return parts.length > 0 ? parts.join(" · ") : null;
 };
 
+// A book jacket is portrait, an article's og:image landscape — the cover box takes
+// the shape of what it holds so neither is cropped to the other's.
+const coverClass = (doc: DocumentResponse, base: string): string =>
+  doc.kind === "ARTICLE" ? `${base} ${styles.coverWide}` : base;
+
 // The reader's front door (ADR-022): every document as a card linking into the
 // chapter reader. Status is shown so a document still moving through the pipeline
 // reads as pending rather than broken.
@@ -69,13 +74,16 @@ export function LibraryPage() {
               <Link to={`/documents/${doc.id}`} className={styles.card}>
                 {doc.has_cover ? (
                   <img
-                    className={styles.cover}
+                    className={coverClass(doc, styles.cover)}
                     src={coverUrl(doc.id)}
                     alt={`Cover of ${doc.title}`}
                     loading="lazy"
                   />
                 ) : (
-                  <div className={styles.coverBlank} aria-hidden="true" />
+                  <div
+                    className={coverClass(doc, styles.coverBlank)}
+                    aria-hidden="true"
+                  />
                 )}
                 <span className={styles.title}>{doc.title}</span>
                 {attribution(doc) && (

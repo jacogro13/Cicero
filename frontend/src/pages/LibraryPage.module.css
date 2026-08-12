@@ -84,6 +84,12 @@
   background: #f3f4f6;
 }
 
+/* Articles carry their page's og:image, which is landscape by convention — the
+   portrait box a book jacket wants would crop it to a strip. */
+.coverWide {
+  aspect-ratio: 16 / 9;
+}
+
 .coverBlank {
   display: flex;
   border: 1px dashed #e5e7eb;
