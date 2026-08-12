@@ -37,6 +37,16 @@ class SetDocumentKind(Command):
 
 
 @dataclass(frozen=True)
+class RetryDocument(Command):
+    """Re-drive a failed document from the start of the spine (ADR-030).
+
+    Issued by a person, never by the pipeline: ``FAILED`` maps to no next stage.
+    """
+
+    document_id: DocumentId
+
+
+@dataclass(frozen=True)
 class DeleteDocument(Command):
     """Remove a document and its source file (ADR-012)."""
 

@@ -64,6 +64,18 @@ async def update_document(
     return DocumentResponse.from_domain(document)
 
 
+@router.post("/{document_id}/retry", response_model=DocumentResponse, status_code=202)
+async def retry_document(
+    document_id: UUID,
+    bus: MessageBus = Depends(get_message_bus),
+) -> DocumentResponse:
+    """Re-drive a failed document from the start; 409 if it did not fail (ADR-030)."""
+    document = await bus.handle(
+        commands.RetryDocument(document_id=DocumentId(document_id))
+    )
+    return DocumentResponse.from_domain(document)
+
+
 @router.get("", response_model=list[DocumentResponse])
 async def list_documents(
     uow_factory: UnitOfWorkFactory = Depends(get_uow_factory),

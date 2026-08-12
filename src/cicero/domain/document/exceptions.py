@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from cicero.domain.document.document_id import DocumentId
+from cicero.domain.document.document_status import DocumentStatus
 from cicero.domain.exceptions import DomainError
 
 
@@ -17,6 +18,13 @@ class DocumentNotFound(DomainError):
 
     def __init__(self, document_id: DocumentId) -> None:
         super().__init__(f"document {document_id.value} not found")
+
+
+class DocumentNotRetryable(DomainError):
+    """Only a FAILED document can be re-driven. Maps to 409 (ADR-008/030)."""
+
+    def __init__(self, document_id: DocumentId, status: DocumentStatus) -> None:
+        super().__init__(f"document {document_id.value} is {status.value}, not FAILED")
 
 
 class ArticleExtractionFailed(DomainError):

@@ -9,10 +9,15 @@ from cicero.domain.document.document_status import DocumentStatus
 from cicero.domain.document.enrichment_status import EnrichmentStatus
 from cicero.domain.document.events import (
     DocumentProcessingFailed,
+    DocumentRetried,
     DocumentUploaded,
     ExtractionCompleted,
 )
-from cicero.domain.document.exceptions import InvalidDocumentTitle, InvalidDocumentUrl
+from cicero.domain.document.exceptions import (
+    DocumentNotRetryable,
+    InvalidDocumentTitle,
+    InvalidDocumentUrl,
+)
 from cicero.domain.messages import Event
 
 
@@ -110,6 +115,15 @@ class Document:
     def mark_failed(self) -> None:
         self.status = DocumentStatus.FAILED
         self.events.append(DocumentProcessingFailed(document_id=self.id))
+
+    def retry(self) -> None:
+        """Return a failed document to the start of the spine (ADR-030). Guarded, unlike
+        the ``mark_*`` methods: its caller is a person, so a wrong call is a client
+        error — raises ``DocumentNotRetryable``."""
+        if self.status is not DocumentStatus.FAILED:
+            raise DocumentNotRetryable(self.id, self.status)
+        self.status = DocumentStatus.UPLOADED
+        self.events.append(DocumentRetried(document_id=self.id))
 
     def mark_enriching(self) -> None:
         self.enrichment_status = EnrichmentStatus.ENRICHING

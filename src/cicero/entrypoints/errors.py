@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 
 from cicero.domain.document.exceptions import (
     DocumentNotFound,
+    DocumentNotRetryable,
     InvalidDocumentTitle,
     InvalidDocumentUrl,
 )
@@ -19,6 +20,7 @@ _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     InvalidDocumentTitle: 422,
     InvalidDocumentUrl: 422,
     DocumentNotFound: 404,
+    DocumentNotRetryable: 409,
 }
 
 

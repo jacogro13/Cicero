@@ -23,6 +23,12 @@ class ExtractionCompleted(DocumentEvent):
 
 
 @dataclass(frozen=True)
+class DocumentRetried(DocumentEvent):
+    """A failed document was returned to the start of the spine on purpose, and is
+    UPLOADED again — the only re-drive nothing automatic issues (ADR-030)."""
+
+
+@dataclass(frozen=True)
 class DocumentProcessingFailed(DocumentEvent):
     """A document failed at some pipeline stage and is now FAILED — stage-agnostic,
     matching the single ``FAILED`` terminal (ADR-014/016)."""

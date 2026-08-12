@@ -25,7 +25,11 @@ from cicero.adapters.summarization.mock import MockSummarizer
 from cicero.adapters.summarization.openai import OpenAISummarizer
 from cicero.domain.document import commands
 from cicero.domain.document.document_id import DocumentId
-from cicero.domain.document.events import DocumentUploaded, ExtractionCompleted
+from cicero.domain.document.events import (
+    DocumentRetried,
+    DocumentUploaded,
+    ExtractionCompleted,
+)
 from cicero.domain.document.ports.article_cover_renderer import ArticleCoverRenderer
 from cicero.domain.document.ports.article_extractor import ArticleExtractor
 from cicero.domain.document.ports.cover_renderer import CoverRenderer
@@ -41,6 +45,7 @@ from cicero.services.document.delete_document import DeleteDocument
 from cicero.services.document.enrich_document import EnrichDocument
 from cicero.services.document.extract_document import ExtractDocument
 from cicero.services.document.ingest_url import IngestUrl
+from cicero.services.document.retry_document import RetryDocument
 from cicero.services.document.set_document_kind import SetDocumentKind
 from cicero.services.document.summarise_document import SummariseDocument
 from cicero.services.document.upload_document import UploadDocument
@@ -178,6 +183,7 @@ def bootstrap(
             commands.UploadDocument: UploadDocument(storage),
             commands.IngestUrl: IngestUrl(),
             commands.SetDocumentKind: SetDocumentKind(),
+            commands.RetryDocument: RetryDocument(),
             commands.DeleteDocument: DeleteDocument(storage),
             commands.ExtractDocument: ExtractDocument(storage, extractor, article_extractor),
             commands.SummariseDocument: SummariseDocument(storage, summarizer),
@@ -187,6 +193,7 @@ def bootstrap(
         },
         event_handlers={
             DocumentUploaded: [AdvanceDocument(queue.enqueue)],
+            DocumentRetried: [AdvanceDocument(queue.enqueue)],
             ExtractionCompleted: [
                 AdvanceDocument(queue.enqueue),
                 AdvanceDocument(enrich_queue.enqueue),
