@@ -9,6 +9,10 @@
 > Builds on [ADR-001](001-hexagonal-ddd-layering.md): the state machine lives
 > entirely in the `Document` aggregate root, with no infrastructure deps.
 
+> The reverse transition deferred below now exists:
+> [ADR-030](030-retrying-a-failed-document.md) adds a guarded `FAILED → UPLOADED`
+> retry, issued explicitly and never by the pipeline.
+
 ---
 
 ## Context
@@ -60,5 +64,5 @@ readiness off `status` keeps one fact in one place.
 - The methods don't guard call *order* (e.g. `mark_ready()` twice); the guard is
   encapsulation, not runtime checks, and the method is the place to add one if
   ever needed.
-- Re-extraction (retry from FAILED) is unsupported for now; when the project needs
-  it, this ADR is revisited and the transition added deliberately.
+- Re-extraction (retry from FAILED) was unsupported at first; the project needed it,
+  and ADR-030 added that transition deliberately — guarded, and operator-issued.
