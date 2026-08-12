@@ -33,8 +33,10 @@ interface DocumentResponse {
 // The self-contained article the compose `article-fixture` service serves (ADR-027):
 // reachable only inside the compose network, which is where the api fetches it. A
 // per-run query string makes each ingest's source_url unique on a persistent volume.
-export const uniqueArticleUrl = () =>
-  `http://article-fixture/article.html?run=${Date.now()}-${Math.random()
+// A path the fixture does not serve is a real 404, which is how a spec seeds a
+// document that genuinely fails extraction.
+export const uniqueArticleUrl = (path = "article.html") =>
+  `http://article-fixture/${path}?run=${Date.now()}-${Math.random()
     .toString(36)
     .slice(2, 8)}`;
 
@@ -99,6 +101,25 @@ export async function waitForSummarised(
       { timeout: 60_000, intervals: [1000] },
     )
     .toBe(200);
+}
+
+// Poll the read side until the document has reached the terminal FAILED — used to
+// seed a spec that starts from a failure, so the failure is a real one the pipeline
+// produced rather than a status written behind its back.
+export async function waitForFailed(
+  request: APIRequestContext,
+  id: string,
+): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get("/api/documents");
+        const docs = (await response.json()) as DocumentResponse[];
+        return docs.find((doc) => doc.id === id)?.status ?? null;
+      },
+      { timeout: 60_000, intervals: [1000] },
+    )
+    .toBe("FAILED");
 }
 
 // Poll the list read side until enrichment has filled the byline — the branch runs
