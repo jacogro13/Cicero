@@ -90,6 +90,13 @@ export function setDocumentKind(
   return http.patchJson<DocumentResponse>(`/documents/${id}`, { kind });
 }
 
+// Re-drive a failed document from the start of the pipeline (ADR-030). Nothing
+// retries on its own, so this is the only way out of FAILED. 409 if the document is
+// not failed — reachable only from a row the poll has not caught up with.
+export function retryDocument(id: string): Promise<DocumentResponse> {
+  return http.post<DocumentResponse>(`/documents/${id}/retry`);
+}
+
 export function deleteDocument(id: string): Promise<void> {
   return http.delete(`/documents/${id}`);
 }

@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -15,6 +15,7 @@ vi.mock("../api/documents", async (importOriginal) => {
     uploadDocument: vi.fn(),
     ingestUrl: vi.fn(),
     setDocumentKind: vi.fn(),
+    retryDocument: vi.fn(),
     deleteDocument: vi.fn(),
     getSummary: vi.fn(),
     getContent: vi.fn(),
@@ -150,6 +151,65 @@ describe("AdminPage", () => {
 
     await waitFor(() =>
       expect(mockedApi.deleteDocument).toHaveBeenCalledWith("1"),
+    );
+  });
+
+  it("offers a retry only on a failed document", async () => {
+    // Retrying anything else is a 409 (ADR-030), so the button is not there to click.
+    mockedApi.listDocuments.mockResolvedValue([
+      {
+        id: "1",
+        title: "Broken upload",
+        status: "FAILED",
+        kind: "BOOK",
+        source_url: null,
+        authors: null,
+        year: null,
+        has_cover: false,
+      },
+      {
+        id: "2",
+        title: "The Odyssey",
+        status: "SUMMARISED",
+        kind: "BOOK",
+        source_url: null,
+        authors: null,
+        year: null,
+        has_cover: false,
+      },
+    ]);
+
+    renderWithClient(<App />, "/admin");
+    const failedRow = (await screen.findByText("Broken upload")).closest("li")!;
+
+    expect(
+      within(failedRow).getByRole("button", { name: "Retry" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Retry" })).toHaveLength(1);
+  });
+
+  it("re-drives a failed document", async () => {
+    const user = userEvent.setup();
+    const broken = {
+      id: "1",
+      title: "Broken upload",
+      status: "FAILED" as const,
+      kind: "BOOK" as const,
+      source_url: null,
+      authors: null,
+      year: null,
+      has_cover: false,
+    };
+    mockedApi.listDocuments.mockResolvedValue([broken]);
+    mockedApi.retryDocument.mockResolvedValue({ ...broken, status: "UPLOADED" });
+
+    renderWithClient(<App />, "/admin");
+    await screen.findByText("Broken upload");
+
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() =>
+      expect(mockedApi.retryDocument).toHaveBeenCalledWith("1"),
     );
   });
 

@@ -1,7 +1,8 @@
 /* One grid for the whole list; each row is a subgrid of it (see DocumentRow). Columns
    therefore size to the widest occupant across *all* rows, so the status badges and
    every action line up down the list instead of drifting with each row's status text
-   and its available views. Title | kind | status | summary | extracted | source | delete. */
+   and its available views. Title | kind | status | summary or retry | extracted |
+   source | delete. */
 .list {
   list-style: none;
   margin: 0;

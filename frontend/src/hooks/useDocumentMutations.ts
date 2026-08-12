@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   deleteDocument,
   ingestUrl,
+  retryDocument,
   setDocumentKind,
   uploadDocument,
   type DocumentKind,
@@ -39,6 +40,18 @@ export function useSetDocumentKind() {
   return useMutation({
     mutationFn: ({ id, kind }: { id: string; kind: DocumentKind }) =>
       setDocumentKind(id, kind),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: documentsKey }),
+  });
+}
+
+// Re-drive a failed document (ADR-030). Invalidating the list is what restarts the
+// polling: the document is back at UPLOADED, so isPending holds again and the row
+// follows the re-run through the stages on its own.
+export function useRetryDocument() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => retryDocument(id),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: documentsKey }),
   });

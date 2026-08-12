@@ -48,7 +48,9 @@ async function errorMessage(response: Response): Promise<string> {
 export const http = {
   get: <T>(path: string) => request<T>(path),
   getText: (path: string) => requestText(path),
-  post: <T>(path: string, body: FormData) =>
+  // The body is optional: an action endpoint whose only argument is the id in the
+  // path (e.g. retry) posts nothing rather than an empty JSON object.
+  post: <T>(path: string, body?: FormData) =>
     request<T>(path, { method: "POST", body }),
   postJson: <T>(path: string, body: unknown) =>
     request<T>(path, {

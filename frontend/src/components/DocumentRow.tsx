@@ -8,6 +8,7 @@ import {
 } from "../api/documents";
 import {
   useDeleteDocument,
+  useRetryDocument,
   useSetDocumentKind,
 } from "../hooks/useDocumentMutations";
 import { ContentPanel } from "./ContentPanel";
@@ -22,6 +23,7 @@ const KINDS: { value: DocumentKind; label: string }[] = [
 
 export function DocumentRow({ doc }: { doc: DocumentResponse }) {
   const del = useDeleteDocument();
+  const retry = useRetryDocument();
   const setKind = useSetDocumentKind();
   const [showSummary, setShowSummary] = useState(false);
   const [showContent, setShowContent] = useState(false);
@@ -61,6 +63,17 @@ export function DocumentRow({ doc }: { doc: DocumentResponse }) {
           onClick={() => setShowSummary(true)}
         >
           View summary
+        </button>
+      )}
+      {/* Nothing re-drives a failed document on its own (ADR-030), so without this
+          button the row is a dead end and the only recovery is delete and re-upload. */}
+      {doc.status === "FAILED" && (
+        <button
+          className={`${styles.view} ${styles.retry} ${styles.retryAction}`}
+          onClick={() => retry.mutate(doc.id)}
+          disabled={retry.isPending}
+        >
+          Retry
         </button>
       )}
       {hasExtractedContent(doc) && (

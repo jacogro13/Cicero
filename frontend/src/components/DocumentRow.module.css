@@ -31,6 +31,13 @@
   grid-column: 4;
 }
 
+/* Retry shares the summary column: a failed document has no summary and a summarised
+   one cannot be retried, so the two are mutually exclusive and cost one column between
+   them rather than an eighth that stands empty in every healthy row. */
+.retryAction {
+  grid-column: 4;
+}
+
 .extractedAction {
   grid-column: 5;
 }
@@ -103,6 +110,22 @@
 .view:hover {
   border-color: #6366f1;
   color: #4338ca;
+}
+
+/* The only action a failed row offers, so it carries more weight than the neutral view
+   buttons — without competing with Delete, which is the other thing to do with it. */
+.retry {
+  color: #4338ca;
+  border-color: #c7d2fe;
+}
+
+.retry:hover:not(:disabled) {
+  background: #eef2ff;
+}
+
+.retry:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* The source action is an anchor (a plain link to the PDF or the article), styled to
