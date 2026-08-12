@@ -9,10 +9,12 @@ from cicero.domain.document.document_status import DocumentStatus
 from cicero.domain.document.enrichment_status import EnrichmentStatus
 from cicero.domain.document.events import (
     DocumentProcessingFailed,
+    DocumentRetried,
     DocumentUploaded,
     ExtractionCompleted,
 )
 from cicero.domain.document.exceptions import (
+    DocumentNotRetryable,
     InvalidDocumentTitle,
     InvalidDocumentUrl,
 )
@@ -153,6 +155,57 @@ class TestDocumentStatusLifecycle:
         doc = Document.create("Any Title")
         doc.mark_failed()
         assert doc.status is DocumentStatus.FAILED
+
+
+class TestDocumentRetry:
+    def test_retry_returns_a_failed_document_to_the_start(self):
+        # FAILED does not record where it happened, so the re-drive restarts the spine;
+        # deterministic keys make that an overwrite, never a duplicate (ADR-030).
+        doc = Document.create("Any Title")
+        doc.mark_failed()
+
+        doc.retry()
+
+        assert doc.status is DocumentStatus.UPLOADED
+
+    def test_retry_records_a_document_retried_event(self):
+        doc = Document.create("Any Title")
+        doc.mark_failed()
+        doc.collect_events()
+
+        doc.retry()
+
+        assert doc.events == [DocumentRetried(document_id=doc.id)]
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            DocumentStatus.UPLOADED,
+            DocumentStatus.EXTRACTING,
+            DocumentStatus.EXTRACTED,
+            DocumentStatus.SUMMARISING,
+            DocumentStatus.SUMMARISED,
+        ],
+    )
+    def test_retrying_anything_but_a_failed_document_is_refused(self, status):
+        # The one guarded transition: its caller is a person, not the pipeline, so a
+        # wrong call is a client error rather than a re-run (ADR-030).
+        doc = Document.create("Any Title")
+        doc.status = status
+
+        with pytest.raises(DocumentNotRetryable):
+            doc.retry()
+
+    def test_a_refused_retry_leaves_the_status_and_events_alone(self):
+        doc = Document.create("Any Title")
+        doc.mark_summarised()
+        doc.collect_events()
+
+        with pytest.raises(DocumentNotRetryable):
+            doc.retry()
+
+        assert doc.status is DocumentStatus.SUMMARISED
+        assert doc.events == []
 
 
 class TestDocumentEvents:

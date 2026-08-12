@@ -64,6 +64,26 @@ class TestBootstrapWiring:
         assert spine == [document_id]
         assert enrich == [document_id]
 
+    async def test_a_retried_document_is_re_enqueued_onto_the_spine(self):
+        # The composition root is where a retry becomes work again: without this
+        # subscription the status reset would be a dead end (ADR-030).
+        uow_factory = make_in_memory_uow_factory()
+        document = Document.create("Clean Code")
+        document.mark_failed()
+        async with uow_factory() as uow:
+            await uow.documents.save(document)
+            await uow.commit()
+        spine_queue, enrich_queue = JobQueue(), JobQueue()
+        bus = _bus(uow_factory, InMemoryDocumentStorage(), spine_queue, enrich_queue)
+
+        spine: list[DocumentId] = []
+        await spine_queue.start(lambda i: _append(spine, i))
+        await bus.handle(commands.RetryDocument(document_id=document.id))
+        await spine_queue.join()
+        await spine_queue.stop()
+
+        assert spine == [document.id]
+
     async def test_enrich_document_command_reaches_its_handler(self):
         uow_factory = make_in_memory_uow_factory()
         storage = InMemoryDocumentStorage()

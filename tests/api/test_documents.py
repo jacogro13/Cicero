@@ -167,6 +167,54 @@ class TestUpdateDocumentKind:
         assert response.status_code == 404
 
 
+def _seed_failed(client: TestClient) -> Document:
+    """Put a FAILED document into the client's shared read seam — the state a stage
+    lands in when its upstream stays down (ADR-029/030)."""
+    uow_factory = client.app.dependency_overrides[get_uow_factory]()
+
+    async def seed() -> Document:
+        document = Document.create("Clean Code")
+        document.mark_extracting()
+        document.mark_failed()
+        async with uow_factory() as uow:
+            await uow.documents.save(document)
+            await uow.commit()
+        return document
+
+    return asyncio.run(seed())
+
+
+class TestRetryDocument:
+    def test_retry_accepts_a_failed_document_and_returns_it_to_uploaded(self):
+        client = _client()
+        document = _seed_failed(client)
+
+        response = client.post(f"/api/documents/{document.id.value}/retry")
+
+        assert response.status_code == 202
+        assert response.json()["status"] == DocumentStatus.UPLOADED.value
+        listed = client.get("/api/documents").json()
+        assert [d["status"] for d in listed] == [DocumentStatus.UPLOADED.value]
+
+    def test_retrying_a_document_that_did_not_fail_returns_409(self):
+        # Well-formed request, wrong state — a conflict, not a validation error.
+        client = _client()
+        created = client.post(
+            "/api/documents", data={"title": "Clean Code"}, files={"file": _PDF}
+        ).json()
+
+        response = client.post(f"/api/documents/{created['id']}/retry")
+
+        assert response.status_code == 409
+
+    def test_retry_unknown_id_returns_404(self):
+        client = _client()
+
+        response = client.post(f"/api/documents/{uuid.uuid4()}/retry")
+
+        assert response.status_code == 404
+
+
 class TestListDocuments:
     def test_get_returns_empty_list_when_no_documents(self):
         client = _client()
