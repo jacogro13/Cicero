@@ -1,6 +1,7 @@
 """The read side: list documents, read a summary, inspect the stored artefacts —
 all bypassing the bus (ADR-015/016/019)."""
 
+import anyio
 import pytest
 
 from cicero.domain.document.chapter import Chapter
@@ -226,6 +227,43 @@ class TestGetDocumentContent:
 
         with pytest.raises(BlobNotFound):
             await views.get_document_content(uow_factory, storage, document.id)
+
+
+class StallingDocumentStorage(InMemoryDocumentStorage):
+    """A store that accepts the read and then takes ``delay`` seconds over it — the
+    failure the deadline exists for, since a refused connection fails fast by itself."""
+
+    def __init__(self, *, delay: float) -> None:
+        super().__init__()
+        self._delay = delay
+        self.gets = 0
+
+    async def get(self, key: str) -> bytes:
+        self.gets += 1
+        await anyio.sleep(self._delay)
+        return await super().get(key)
+
+
+class TestGetDocumentContentDeadline:
+    async def test_a_stalling_store_fails_the_read_as_a_whole(self):
+        # One GET per chapter with no ceiling on the loop multiplies a stall by the
+        # chapter count; the deadline bounds the request instead (ADR-034).
+        uow_factory, storage = make_in_memory_uow_factory(), StallingDocumentStorage(delay=10.0)
+        document = await _save_extracted(uow_factory, storage)
+
+        with pytest.raises(TimeoutError):
+            await views.get_document_content(uow_factory, storage, document.id, deadline=0.05)
+
+        assert storage.gets == 1  # it gave up inside the first chapter, not after both
+
+    async def test_a_read_inside_the_deadline_is_untouched(self):
+        uow_factory, storage = make_in_memory_uow_factory(), StallingDocumentStorage(delay=0.01)
+        document = await _save_extracted(uow_factory, storage)
+
+        content = await views.get_document_content(uow_factory, storage, document.id, deadline=5.0)
+
+        assert content == "# Chapter One\n\nBody of one.\n\n# Chapter Two\n\nBody of two."
+        assert storage.gets == 2
 
 
 class TestGetDocumentFile:
