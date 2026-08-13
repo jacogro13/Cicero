@@ -13,9 +13,9 @@ logger = logging.getLogger(__name__)
 
 class SummariseDocument:
     """Handler for ``SummariseDocument``: summarise each chapter from its stored
-    Markdown, driving SUMMARISING→SUMMARISED/FAILED (ADR-016/021). The summaries
-    commit in the same transaction as ``mark_summarised``. Raises
-    ``DocumentNotFound``."""
+    Markdown, driving SUMMARISING→SUMMARISED/FAILED (ADR-016/021). Each summary
+    commits as it is produced, so a re-run resumes rather than re-pays (ADR-031).
+    Raises ``DocumentNotFound``."""
 
     def __init__(self, storage: DocumentStorage, summarizer: DocumentSummarizer) -> None:
         self._storage = storage
@@ -33,14 +33,14 @@ class SummariseDocument:
             await uow.commit()
 
         try:
-            summaries = await self._summarise_chapters(document, chapter_count, uow)
+            summarised = await self._summarise_chapters(document, chapter_count, uow)
         except Exception:
             logger.exception("Summarization failed id=%s", document_id)
             await self._mark_failed(document_id, uow)
             return
 
         # Deleted mid-summarisation? Dropping a stale stage is not an error (ADR-014).
-        if summaries is None:
+        if not summarised:
             logger.info("Document deleted during summarisation; dropping id=%s", document_id)
             return
 
@@ -51,23 +51,32 @@ class SummariseDocument:
                 return
             document.mark_summarised()
             await uow.documents.save(document)
-            for index, summary in enumerate(summaries):
-                await uow.summaries.save(document_id, index, summary)
             await uow.commit()
 
     async def _summarise_chapters(
         self, document: Document, count: int, uow: UnitOfWork
-    ) -> list[str] | None:
-        """The chapter summaries in order, or ``None`` if the document was deleted
-        partway — the call already in flight is still paid in full (ADR-023)."""
-        summaries: list[str] = []
+    ) -> bool:
+        """Summarise and persist every chapter still missing one, committing each as it
+        is produced (ADR-031). ``False`` if the document was deleted partway — the call
+        already in flight is still paid in full, and its result dropped (ADR-023)."""
+        async with uow:
+            if await uow.documents.find_by_id(document.id) is None:
+                return False
+            # Chapters a previous run already paid for are not bought again (ADR-031).
+            done = await uow.summaries.all(document.id)
         for index in range(count):
+            if index in done:
+                continue
+            markdown = (await self._storage.get(document.chapter_key(index))).decode()
+            summary = await self._summarizer.summarize(markdown)
+            # The transaction that saves a summary is also the deletion checkpoint
+            # before the *next* chapter's call: one round trip, both jobs.
             async with uow:
                 if await uow.documents.find_by_id(document.id) is None:
-                    return None
-            markdown = (await self._storage.get(document.chapter_key(index))).decode()
-            summaries.append(await self._summarizer.summarize(markdown))
-        return summaries
+                    return False
+                await uow.summaries.save(document.id, index, summary)
+                await uow.commit()
+        return True
 
     async def _mark_failed(self, document_id: DocumentId, uow: UnitOfWork) -> None:
         async with uow:

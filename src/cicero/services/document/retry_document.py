@@ -7,7 +7,8 @@ from cicero.domain.ports.unit_of_work import UnitOfWork
 class RetryDocument:
     """Handler: return a failed document to ``UPLOADED`` so the pipeline picks it up
     again (ADR-030). The projections are left in place — the re-run overwrites them by
-    key. Raises ``DocumentNotFound`` and ``DocumentNotRetryable``."""
+    key, and skips the chapter summaries it already bought (ADR-031). Raises
+    ``DocumentNotFound`` and ``DocumentNotRetryable``."""
 
     async def __call__(
         self, command: commands.RetryDocument, uow: UnitOfWork
