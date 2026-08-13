@@ -505,9 +505,14 @@ message bus**
 (`app.state.bus`, the `get_message_bus` seam tests swap wholesale) and **starts the job
 queue**, re-enqueuing any interrupted extraction (ADR-013). The whole thing runs from
 `docker compose up`: Postgres + MinIO + the api, gated on health, zero external
-services. See **[ADR-010](adr/010-composition-root-settings-and-startup-provisioning.md)**,
-**[ADR-013](adr/013-serial-job-queue-and-restart-recovery.md)**, and
-**[ADR-024](adr/024-alembic-migrations.md)**.
+services. That engine states what a connection may cost rather than inheriting it: a
+statement deadline on every asyncpg connection — without one a hung query holds its
+request or job worker forever — and an explicit pool size, overflow, and checkout wait,
+sized against the one worker and two queues that share them (ADR-033). See
+**[ADR-010](adr/010-composition-root-settings-and-startup-provisioning.md)**,
+**[ADR-013](adr/013-serial-job-queue-and-restart-recovery.md)**,
+**[ADR-024](adr/024-alembic-migrations.md)**, and
+**[ADR-033](adr/033-database-deadlines-and-pool-budget.md)**.
 
 ```mermaid
 sequenceDiagram
@@ -727,3 +732,4 @@ references a decision made later.
 - [ADR-030 — Retrying a failed document](adr/030-retrying-a-failed-document.md)
 - [ADR-031 — Per-chapter summary checkpointing](adr/031-per-chapter-summary-checkpointing.md)
 - [ADR-032 — Resuming and redoing a stage](adr/032-resuming-and-redoing-a-stage.md)
+- [ADR-033 — Database deadlines and a stated pool budget](adr/033-database-deadlines-and-pool-budget.md)
