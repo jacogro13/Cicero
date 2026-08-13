@@ -61,7 +61,8 @@ reached**, not readiness (ADR-014): that is what lets the edge derive the next
 command from a stored status, and what lets a later stage append to the chain
 instead of redefining a terminal name. The internal extracted text — split into **chapters** at the PDF's own bookmarks,
 never shown to the reader — exists from EXTRACTED onwards; the per-chapter summaries,
-the read experience, from SUMMARISED. Chapter *content* lives in object storage at
+the read experience, fill in one at a time across SUMMARISING and are complete at
+SUMMARISED (ADR-031). Chapter *content* lives in object storage at
 identity-derived keys (`chapter_key(i)`, `source_key`'s twins, always computable); the
 chapter *titles* — the table of contents — in a read model. Neither is lifecycle
 state, so nothing content-shaped has to be kept in sync on transition. The
@@ -629,8 +630,9 @@ the code on purpose. Implemented so far:
   `EXTRACTING → EXTRACTED/FAILED`, branching on `source_url` — a blob into TOC chapters,
   a URL into one fetched article chapter — and storing each at `chapter_key(i)` with the
   titles in the `chapters` read model (file-first, like upload). **`SummariseDocument`**, the next worker-issued stage,
-  drives `SUMMARISING → SUMMARISED/FAILED`, writing the per-chapter summary read models
-  in the same transaction as `mark_summarised`.
+  drives `SUMMARISING → SUMMARISED/FAILED`, committing each per-chapter summary read
+  model as it is produced and skipping the positions a previous run already bought, so a
+  re-drive resumes instead of re-paying (ADR-031).
 - The **read side** (`services/views.py`): **`views.list_documents`** returns every
   stored document as the `DocumentView` read model (through the aggregate), and
   **`views.get_document_summary`** serves the summary from the denormalized `summaries`
@@ -709,3 +711,4 @@ references a decision made later.
 - [ADR-028 — Enrichment: cover, authors, year](adr/028-enrichment-cover-authors-year.md)
 - [ADR-029 — Bounded retry for outbound HTTP](adr/029-bounded-retry-for-outbound-http.md)
 - [ADR-030 — Retrying a failed document](adr/030-retrying-a-failed-document.md)
+- [ADR-031 — Per-chapter summary checkpointing](adr/031-per-chapter-summary-checkpointing.md)
