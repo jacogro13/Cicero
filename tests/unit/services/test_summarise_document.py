@@ -2,8 +2,8 @@
 (ADR-016/021).
 
 Drives SUMMARISING→SUMMARISED/FAILED with a stub summarizer, summarising each chapter
-from its own stored Markdown. The summaries are written in the *same* transaction as
-``mark_summarised``, so they are readable exactly when the document is SUMMARISED. An
+from its own stored Markdown. Each summary is committed as it is produced, so a run that
+stops partway keeps what it paid for and a re-drive buys only the rest (ADR-031). An
 unknown id raises ``DocumentNotFound``.
 """
 
@@ -50,10 +50,22 @@ async def _summarise(uow_factory, storage, summarizer, document_id):
 
 class _EchoSummarizer(StubDocumentSummarizer):
     """Summarises each chapter to a marker of its own content, so per-chapter
-    routing is observable."""
+    routing is observable; ``seen`` is every chapter it was actually paid for."""
+
+    def __init__(self) -> None:
+        super().__init__("s")
+        self.seen: list[str] = []
 
     async def summarize(self, markdown: str) -> str:
+        self.seen.append(markdown)
         return f"summary of: {markdown}"
+
+
+class _EchoFailingOnTheSecondChapter(_EchoSummarizer):
+    async def summarize(self, markdown: str) -> str:
+        if len(self.seen) == 1:
+            raise RuntimeError("summarization failed")
+        return await super().summarize(markdown)
 
 
 class _ExplodingSummarizer(StubDocumentSummarizer):
@@ -125,6 +137,8 @@ class TestSummariseDocument:
         assert seen == [DocumentStatus.SUMMARISING, DocumentStatus.SUMMARISING]
 
     async def test_summarization_failure_marks_failed_and_stores_no_summary(self):
+        # The first chapter is the one that fails, so nothing was produced to keep —
+        # the partial case is the next test's.
         uow_factory = make_in_memory_uow_factory()
         storage = InMemoryDocumentStorage()
         document = await _extracted_document(uow_factory, storage)
@@ -134,8 +148,42 @@ class TestSummariseDocument:
         async with uow_factory() as uow:
             failed = await uow.documents.find_by_id(document.id)
         assert failed.status is DocumentStatus.FAILED
-        # SUMMARISED ⇔ summaries readable, so a failure leaves nothing for the reader.
         assert await views.get_document_summary(uow_factory, document.id) is None
+
+    async def test_a_failed_chapter_keeps_the_summaries_already_paid_for(self):
+        # Each summary is persisted as it is produced, so a failure at chapter n
+        # discards only chapter n — the LLM calls before it stay bought (ADR-031).
+        uow_factory = make_in_memory_uow_factory()
+        storage = InMemoryDocumentStorage()
+        document = await _extracted_document(uow_factory, storage)
+
+        await _summarise(uow_factory, storage, _EchoFailingOnTheSecondChapter(), document.id)
+
+        async with uow_factory() as uow:
+            failed = await uow.documents.find_by_id(document.id)
+            assert failed.status is DocumentStatus.FAILED
+            assert await uow.summaries.all(document.id) == {0: "summary of: Intro body."}
+
+    async def test_a_re_drive_only_summarises_the_chapters_still_missing(self):
+        # The point of persisting early: a re-run resumes where it stopped instead of
+        # buying every chapter again (ADR-030's projections, ADR-031's checkpoint).
+        uow_factory = make_in_memory_uow_factory()
+        storage = InMemoryDocumentStorage()
+        document = await _extracted_document(uow_factory, storage)
+        await _summarise(uow_factory, storage, _EchoFailingOnTheSecondChapter(), document.id)
+
+        resumed = _EchoSummarizer()
+        await _summarise(uow_factory, storage, resumed, document.id)
+
+        assert resumed.seen == ["Body text."]  # chapter 0 is not paid for twice
+        chapters = await views.get_document_chapters(uow_factory, document.id)
+        assert [c.summary for c in chapters] == [
+            "summary of: Intro body.",
+            "summary of: Body text.",
+        ]
+        async with uow_factory() as uow:
+            resumed_document = await uow.documents.find_by_id(document.id)
+        assert resumed_document.status is DocumentStatus.SUMMARISED
 
     async def test_delete_mid_summarisation_stops_early_and_drops(self):
         # A DELETE lands after the first chapter: the stage must stop before summarising
