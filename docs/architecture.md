@@ -152,7 +152,10 @@ The `DocumentStorage` port's real implementation is **`S3DocumentStorage`** — 
 the self-contained stack and a cloud bucket). boto3 is synchronous, so each call is
 offloaded to the **anyio worker thread** to keep the event loop free; the adapter
 assumes its bucket exists (provisioned out of band), as the Postgres adapter assumes
-its schema does. It ships `put`, `get`, and `delete` (the port's surface), proven against a **real
+its schema does. Every call carries a **stated budget** rather than botocore's unstated
+60s connect, 60s read, and five attempts: an explicit `Config` names the two timeouts and
+the total number of tries, so what one stalled GET costs is readable in the adapter
+(ADR-034). It ships `put`, `get`, and `delete` (the port's surface), proven against a **real
 MinIO testcontainer** in `tests/integration/` (`make integration`) — a fresh bucket
 per test, the round-trip read back through a separate client. Live wiring (endpoint,
 keys, bucket from settings; the bucket provisioned at startup; a compose object-store
@@ -464,7 +467,10 @@ query off the injected `uow_factory` (ADR-015). Most read a Postgres projection
 (the list, the summary, the chapters); the **content/file viewers** instead read
 **blobs** off the `DocumentStorage` port at the document's `chapter_key(i)`/`source_key`
 — the content view assembling the chapters under their titles — and stream with an
-honest content-type, so the read side injects `storage` too (ADR-019/021).
+honest content-type, so the read side injects `storage` too (ADR-019/021). That view is
+one GET per chapter, so a slow store multiplies by the chapter count: the loop runs under
+a **total deadline**, failing the request as a whole rather than paying the per-blob worst
+case forty times over (ADR-034).
 Domain failures raised by the handlers are turned into
 responses by the error registry (see "Errors: the domain raises, the entrypoints
 map"). The bus is bootstrapped in `dependencies.py` and injected with `Depends`; the
@@ -733,3 +739,4 @@ references a decision made later.
 - [ADR-031 — Per-chapter summary checkpointing](adr/031-per-chapter-summary-checkpointing.md)
 - [ADR-032 — Resuming and redoing a stage](adr/032-resuming-and-redoing-a-stage.md)
 - [ADR-033 — Database deadlines and a stated pool budget](adr/033-database-deadlines-and-pool-budget.md)
+- [ADR-034 — A storage call budget and a content-read deadline](adr/034-storage-call-budget-and-content-read-deadline.md)
