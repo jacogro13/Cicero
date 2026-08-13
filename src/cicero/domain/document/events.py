@@ -24,8 +24,14 @@ class ExtractionCompleted(DocumentEvent):
 
 @dataclass(frozen=True)
 class DocumentRetried(DocumentEvent):
-    """A failed document was returned to the start of the spine on purpose, and is
-    UPLOADED again — the only re-drive nothing automatic issues (ADR-030)."""
+    """A failed document was re-driven on purpose, and waits at the furthest stage it
+    completed — the only re-drive nothing automatic issues (ADR-030/032)."""
+
+
+@dataclass(frozen=True)
+class SummariesDiscarded(DocumentEvent):
+    """A summarised document's summaries were thrown away on purpose and it is
+    ``EXTRACTED`` again, waiting to be summarised afresh (ADR-032)."""
 
 
 @dataclass(frozen=True)

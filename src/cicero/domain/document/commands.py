@@ -47,6 +47,16 @@ class RetryDocument(Command):
 
 
 @dataclass(frozen=True)
+class ResummariseDocument(Command):
+    """Discard a document's summaries and summarise it again (ADR-032).
+
+    Issued by a person: the pipeline never redoes a stage it already finished.
+    """
+
+    document_id: DocumentId
+
+
+@dataclass(frozen=True)
 class DeleteDocument(Command):
     """Remove a document and its source file (ADR-012)."""
 

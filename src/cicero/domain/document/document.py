@@ -12,6 +12,7 @@ from cicero.domain.document.events import (
     DocumentRetried,
     DocumentUploaded,
     ExtractionCompleted,
+    SummariesDiscarded,
 )
 from cicero.domain.document.exceptions import (
     DocumentNotRetryable,
@@ -116,14 +117,27 @@ class Document:
         self.status = DocumentStatus.FAILED
         self.events.append(DocumentProcessingFailed(document_id=self.id))
 
-    def retry(self) -> None:
-        """Return a failed document to the start of the spine (ADR-030). Guarded, unlike
-        the ``mark_*`` methods: its caller is a person, so a wrong call is a client
-        error — raises ``DocumentNotRetryable``."""
+    def retry(self, *, extraction_complete: bool) -> None:
+        """Re-drive a failed document from the furthest stage it completed (ADR-030/032)
+        — ``EXTRACTED`` when extraction got there, the start of the spine otherwise.
+        Guarded, unlike the ``mark_*`` methods: its caller is a person, so a wrong call
+        is a client error — raises ``DocumentNotRetryable``."""
         if self.status is not DocumentStatus.FAILED:
             raise DocumentNotRetryable(self.id, self.status)
-        self.status = DocumentStatus.UPLOADED
+        self.status = (
+            DocumentStatus.EXTRACTED if extraction_complete else DocumentStatus.UPLOADED
+        )
         self.events.append(DocumentRetried(document_id=self.id))
+
+    def resummarise(self) -> None:
+        """Send a summarised document back to be summarised again (ADR-032) — one stage
+        back, since the chapters it consumes are still there. Guarded like
+        :meth:`retry`, and for the same reason: a person issues it, so a wrong call is a
+        client error — raises ``DocumentNotRetryable``."""
+        if self.status is not DocumentStatus.SUMMARISED:
+            raise DocumentNotRetryable(self.id, self.status, DocumentStatus.SUMMARISED)
+        self.status = DocumentStatus.EXTRACTED
+        self.events.append(SummariesDiscarded(document_id=self.id))
 
     def mark_enriching(self) -> None:
         self.enrichment_status = EnrichmentStatus.ENRICHING

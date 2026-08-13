@@ -21,10 +21,18 @@ class DocumentNotFound(DomainError):
 
 
 class DocumentNotRetryable(DomainError):
-    """Only a FAILED document can be re-driven. Maps to 409 (ADR-008/030)."""
+    """A document cannot be re-driven from the status it is in — retried unless it
+    FAILED, re-summarised unless it is SUMMARISED. Maps to 409 (ADR-008/030/032)."""
 
-    def __init__(self, document_id: DocumentId, status: DocumentStatus) -> None:
-        super().__init__(f"document {document_id.value} is {status.value}, not FAILED")
+    def __init__(
+        self,
+        document_id: DocumentId,
+        status: DocumentStatus,
+        expected: DocumentStatus = DocumentStatus.FAILED,
+    ) -> None:
+        super().__init__(
+            f"document {document_id.value} is {status.value}, not {expected.value}"
+        )
 
 
 class ArticleExtractionFailed(DomainError):

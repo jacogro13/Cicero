@@ -5,10 +5,10 @@ from cicero.domain.ports.unit_of_work import UnitOfWork
 
 
 class RetryDocument:
-    """Handler: return a failed document to ``UPLOADED`` so the pipeline picks it up
-    again (ADR-030). The projections are left in place — the re-run overwrites them by
-    key, and skips the chapter summaries it already bought (ADR-031). Raises
-    ``DocumentNotFound`` and ``DocumentNotRetryable``."""
+    """Handler: send a failed document back to the furthest stage it completed, so the
+    pipeline picks it up from there (ADR-030/032). The projections are left in place —
+    they are what says how far it got, and the re-run overwrites or skips them rather
+    than duplicating (ADR-031). Raises ``DocumentNotFound`` and ``DocumentNotRetryable``."""
 
     async def __call__(
         self, command: commands.RetryDocument, uow: UnitOfWork
@@ -17,7 +17,10 @@ class RetryDocument:
             document = await uow.documents.find_by_id(command.document_id)
             if document is None:
                 raise DocumentNotFound(command.document_id)
-            document.retry()
+            # Chapter rows commit with ``mark_extracted``, after the blobs are written,
+            # so having them *is* the record that extraction finished (ADR-032).
+            chapters = await uow.chapters.list(command.document_id)
+            document.retry(extraction_complete=bool(chapters))
             await uow.documents.save(document)
             await uow.commit()
         return document

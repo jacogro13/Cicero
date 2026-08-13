@@ -69,9 +69,23 @@ async def retry_document(
     document_id: UUID,
     bus: MessageBus = Depends(get_message_bus),
 ) -> DocumentResponse:
-    """Re-drive a failed document from the start; 409 if it did not fail (ADR-030)."""
+    """Re-drive a failed document from the furthest stage it completed; 409 if it did
+    not fail (ADR-030/032)."""
     document = await bus.handle(
         commands.RetryDocument(document_id=DocumentId(document_id))
+    )
+    return DocumentResponse.from_domain(document)
+
+
+@router.post("/{document_id}/resummarise", response_model=DocumentResponse, status_code=202)
+async def resummarise_document(
+    document_id: UUID,
+    bus: MessageBus = Depends(get_message_bus),
+) -> DocumentResponse:
+    """Discard a document's summaries and summarise it again; 409 unless it is
+    SUMMARISED (ADR-032)."""
+    document = await bus.handle(
+        commands.ResummariseDocument(document_id=DocumentId(document_id))
     )
     return DocumentResponse.from_domain(document)
 
