@@ -97,6 +97,13 @@ export function retryDocument(id: string): Promise<DocumentResponse> {
   return http.post<DocumentResponse>(`/documents/${id}/retry`);
 }
 
+// Throw a document's summaries away and summarise it again (ADR-032). Keeping them
+// would make the re-run skip every chapter, so this is the only way to buy new
+// summaries after a model or prompt change. 409 unless the document is SUMMARISED.
+export function resummariseDocument(id: string): Promise<DocumentResponse> {
+  return http.post<DocumentResponse>(`/documents/${id}/resummarise`);
+}
+
 export function deleteDocument(id: string): Promise<void> {
   return http.delete(`/documents/${id}`);
 }

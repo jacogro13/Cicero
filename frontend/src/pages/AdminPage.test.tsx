@@ -16,6 +16,7 @@ vi.mock("../api/documents", async (importOriginal) => {
     ingestUrl: vi.fn(),
     setDocumentKind: vi.fn(),
     retryDocument: vi.fn(),
+    resummariseDocument: vi.fn(),
     deleteDocument: vi.fn(),
     getSummary: vi.fn(),
     getContent: vi.fn(),
@@ -290,6 +291,37 @@ describe("AdminPage", () => {
 
     expect(await screen.findByText("A hero sails home.")).toBeInTheDocument();
     expect(mockedApi.getSummary).toHaveBeenCalledWith("1");
+  });
+
+  it("summarises a document again from the summary it is showing", async () => {
+    // The judgement is made on the summary in front of you, so the action lives in
+    // the panel; it closes because the click deletes what the panel is showing.
+    const user = userEvent.setup();
+    mockedApi.listDocuments.mockResolvedValue([
+      {
+        id: "1",
+        title: "The Odyssey",
+        status: "SUMMARISED",
+        kind: "BOOK",
+        source_url: null,
+        authors: null,
+        year: null,
+        has_cover: false,
+      },
+    ]);
+    mockedApi.getSummary.mockResolvedValue({ text: "A hero sails home." });
+
+    renderWithClient(<App />, "/admin");
+    await screen.findByText("The Odyssey");
+    await user.click(screen.getByRole("button", { name: "View summary" }));
+    await screen.findByText("A hero sails home.");
+
+    await user.click(screen.getByRole("button", { name: "Summarise again" }));
+
+    await waitFor(() =>
+      expect(mockedApi.resummariseDocument).toHaveBeenCalledWith("1"),
+    );
+    expect(screen.queryByText("A hero sails home.")).not.toBeInTheDocument();
   });
 
   it("opens the extracted text for an extracted document", async () => {

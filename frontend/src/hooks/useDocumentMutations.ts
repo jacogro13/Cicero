@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   deleteDocument,
   ingestUrl,
+  resummariseDocument,
   retryDocument,
   setDocumentKind,
   uploadDocument,
@@ -52,6 +53,18 @@ export function useRetryDocument() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => retryDocument(id),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: documentsKey }),
+  });
+}
+
+// Summarise a document again from scratch (ADR-032). Like retry, invalidating the list
+// is what restarts the polling: the document is back at EXTRACTED, so the row follows
+// the new run through SUMMARISING on its own.
+export function useResummariseDocument() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => resummariseDocument(id),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: documentsKey }),
   });

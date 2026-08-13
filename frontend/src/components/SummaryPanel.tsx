@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getSummary } from "../api/documents";
+import { useResummariseDocument } from "../hooks/useDocumentMutations";
 import { MarkdownModal } from "./MarkdownModal";
+import styles from "./MarkdownModal.module.css";
 
 interface SummaryPanelProps {
   documentId: string;
@@ -17,6 +19,15 @@ export function SummaryPanel({ documentId, title, onClose }: SummaryPanelProps) 
     queryKey: ["summary", documentId],
     queryFn: () => getSummary(documentId),
   });
+  const resummarise = useResummariseDocument();
+
+  // The action lives here rather than in the row: it is the summary in front of you
+  // that you judge worth redoing, and the row's grid has no free column (ADR-032).
+  // Closing is not optional — the summary it is showing is deleted by the click.
+  const summariseAgain = () => {
+    resummarise.mutate(documentId);
+    onClose();
+  };
 
   return (
     <MarkdownModal
@@ -28,6 +39,15 @@ export function SummaryPanel({ documentId, title, onClose }: SummaryPanelProps) 
       loadingLabel="Loading summary…"
       errorLabel="Could not load the summary."
       markdown={summary.data?.text}
+      action={
+        <button
+          className={styles.actionButton}
+          onClick={summariseAgain}
+          disabled={resummarise.isPending}
+        >
+          Summarise again
+        </button>
+      }
     />
   );
 }

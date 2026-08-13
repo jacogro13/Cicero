@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -13,6 +13,9 @@ interface MarkdownModalProps {
   loadingLabel: string;
   errorLabel: string;
   markdown?: string;
+  // An optional control in the header, for a view whose content can be acted on —
+  // the shell stays presentational and never knows what the action does.
+  action?: ReactNode;
 }
 
 // The shared modal shell for the admin's two Markdown read views — the LLM
@@ -28,6 +31,7 @@ export function MarkdownModal({
   loadingLabel,
   errorLabel,
   markdown,
+  action,
 }: MarkdownModalProps) {
   // Close on Escape, so a long document never has to be scrolled back to the top
   // to be dismissed (the × in the header stays pinned for the same reason).
@@ -49,6 +53,7 @@ export function MarkdownModal({
       >
         <header className={styles.header}>
           <h2 className={styles.title}>{title}</h2>
+          {action && <div className={styles.action}>{action}</div>}
           <button className={styles.close} onClick={onClose} aria-label="Close">
             ×
           </button>
