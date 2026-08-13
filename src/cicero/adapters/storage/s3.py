@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import partial
 
 import anyio
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from cicero.domain.document.exceptions import BlobNotFound
@@ -13,6 +15,20 @@ from cicero.domain.document.ports.document_storage import DocumentStorage
 _BUCKET_EXISTS = {"BucketAlreadyOwnedByYou", "BucketAlreadyExists"}
 # A missing object: MinIO/AWS answer NoSuchKey, some gateways only the bare 404.
 _NO_SUCH_KEY = {"NoSuchKey", "404"}
+
+
+@dataclass(frozen=True)
+class StoragePolicy:
+    """What one storage call is allowed to cost: ``connect_timeout`` seconds to open the
+    connection, ``read_timeout`` per socket read, over at most ``max_attempts`` tries
+    (ADR-034). Left to botocore these are 60s, 60s, and five attempts."""
+
+    connect_timeout: float = 5.0
+    read_timeout: float = 15.0
+    max_attempts: int = 3
+
+
+DEFAULT_STORAGE = StoragePolicy()
 
 
 class S3DocumentStorage(DocumentStorage):
@@ -29,6 +45,7 @@ class S3DocumentStorage(DocumentStorage):
         secret_access_key: str,
         bucket: str,
         region_name: str,
+        policy: StoragePolicy = DEFAULT_STORAGE,
     ) -> None:
         self._bucket = bucket
         self._client = boto3.client(
@@ -37,6 +54,14 @@ class S3DocumentStorage(DocumentStorage):
             aws_access_key_id=access_key_id,
             aws_secret_access_key=secret_access_key,
             region_name=region_name,
+            config=Config(
+                connect_timeout=policy.connect_timeout,
+                read_timeout=policy.read_timeout,
+                # `total_max_attempts` counts tries; botocore's `max_attempts` key counts
+                # retries, which would make the policy's number mean one more call than
+                # it says. Standard mode is where the modern retry set lives.
+                retries={"total_max_attempts": policy.max_attempts, "mode": "standard"},
+            ),
         )
 
     async def ensure_bucket(self) -> None:

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import anyio
+
 from cicero.domain.document.document import Document
 from cicero.domain.document.document_id import DocumentId
 from cicero.domain.document.document_kind import DocumentKind
@@ -15,6 +17,11 @@ from cicero.domain.document.document_status import DocumentStatus
 from cicero.domain.document.exceptions import DocumentNotFound
 from cicero.domain.document.ports.document_storage import DocumentStorage
 from cicero.domain.ports.unit_of_work import UnitOfWork, UnitOfWorkFactory
+
+#: Seconds the whole content read may take, however many chapters it spans (ADR-034).
+#: Well above a healthy book — the blobs are Markdown off a nearby store — and far
+#: below the hours a stalling backend would otherwise buy itself.
+CONTENT_READ_DEADLINE = 60.0
 
 
 @dataclass(frozen=True)
@@ -112,18 +119,23 @@ async def get_document_content(
     uow_factory: UnitOfWorkFactory,
     storage: DocumentStorage,
     document_id: DocumentId,
+    deadline: float = CONTENT_READ_DEADLINE,
 ) -> str | None:
     """The chapter blobs assembled under their titles, or ``None`` until the document
-    has chapters (ADR-019). Raises :class:`DocumentNotFound` for an unknown id."""
+    has chapters (ADR-019). Raises :class:`DocumentNotFound` for an unknown id, and
+    ``TimeoutError`` if the blobs together outrun ``deadline``."""
     async with uow_factory() as uow:
         document = await _require_document(uow, document_id)
         titles = await uow.chapters.list(document_id)
     if not titles:
         return None
-    sections = [
-        f"# {title}\n\n{(await storage.get(document.chapter_key(index))).decode('utf-8')}"
-        for index, title in enumerate(titles)
-    ]
+    # One GET per chapter, so a slow store multiplies by the chapter count: the deadline
+    # is on the whole loop, bounding the request rather than each blob (ADR-034).
+    with anyio.fail_after(deadline):
+        sections = [
+            f"# {title}\n\n{(await storage.get(document.chapter_key(index))).decode('utf-8')}"
+            for index, title in enumerate(titles)
+        ]
     return "\n\n".join(sections)
 
 
