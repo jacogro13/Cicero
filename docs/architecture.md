@@ -72,16 +72,23 @@ correctable later via `set_kind`) and read by no pipeline stage (ADR-026) — an
 nullable **`source_url`**: set for a web article ingested by
 link, `NULL` for an upload, and the discriminator the extract stage branches on
 (ADR-027). `FAILED` is terminal to the *pipeline* — nothing automatic re-drives it —
-but it is no longer a dead end: `retry()` returns a failed document to `UPLOADED`, the
-one transition issued by a person and the only guarded one, since a wrong call is a
-client error rather than a re-run (ADR-030). See
+but it is no longer a dead end: `retry()` sends a failed document back to the furthest
+stage it completed — `EXTRACTED` when the chapter projection survived, `UPLOADED`
+otherwise. It is one of the two transitions a person issues, and those two are the only
+guarded ones, since a wrong call is a client error rather than a re-run (ADR-030/032).
+The other is `resummarise()`, which discards a `SUMMARISED` document's summaries and
+returns it to `EXTRACTED` to be summarised afresh: with the projection kept the re-run
+would skip every chapter (ADR-031), so **discarding is what asks for new work** — the
+general rule being that a projection is the record a stage finished, kept to skip that
+stage and dropped to redo it (ADR-032). See
 **[ADR-002](adr/002-document-status-state-machine.md)**,
 **[ADR-014](adr/014-status-driven-pipeline-advance.md)**,
 **[ADR-016](adr/016-ai-summaries-and-the-summary-read-model.md)**,
 **[ADR-021](adr/021-chapters-from-the-pdf-table-of-contents.md)**,
 **[ADR-026](adr/026-document-kind.md)**,
-**[ADR-027](adr/027-url-ingest.md)**, and
-**[ADR-030](adr/030-retrying-a-failed-document.md)**.
+**[ADR-027](adr/027-url-ingest.md)**,
+**[ADR-030](adr/030-retrying-a-failed-document.md)**, and
+**[ADR-032](adr/032-resuming-and-redoing-a-stage.md)**.
 
 ```mermaid
 stateDiagram-v2
@@ -442,7 +449,9 @@ per-chapter summaries), `GET /api/documents/{id}/content` (admin inspection: the
 chapters assembled under their titles as `text/markdown`, 404 until EXTRACTED) and
 `GET /api/documents/{id}/file` (the original PDF as `application/pdf`),
 `PATCH /api/documents/{id}` (correct the browsing `kind`, ADR-026),
-`POST /api/documents/{id}/retry` (re-drive a failed document, → 202, ADR-030), and
+`POST /api/documents/{id}/retry` (re-drive a failed document, → 202, ADR-030/032),
+`POST /api/documents/{id}/resummarise` (discard the summaries and summarise again,
+→ 202, 409 unless SUMMARISED, ADR-032), and
 `DELETE /api/documents/{id}` (→ 204); `/health` stays
 unprefixed. Each route is thin: parse the request, call the use case, map the
 result to a **`DocumentResponse`** (`id`, `title`, `status`, `kind`, `source_url`) —
@@ -632,7 +641,12 @@ the code on purpose. Implemented so far:
   titles in the `chapters` read model (file-first, like upload). **`SummariseDocument`**, the next worker-issued stage,
   drives `SUMMARISING → SUMMARISED/FAILED`, committing each per-chapter summary read
   model as it is produced and skipping the positions a previous run already bought, so a
-  re-drive resumes instead of re-paying (ADR-031).
+  re-drive resumes instead of re-paying (ADR-031). **`RetryDocument`** and
+  **`ResummariseDocument`** are the two a person issues rather than the pipeline: the
+  first reads the chapter projection to resume a failed document at the furthest stage
+  it completed, the second deletes a summarised document's summaries in the same
+  transaction that returns it to `EXTRACTED`, so the next run buys them all again
+  (ADR-030/032).
 - The **read side** (`services/views.py`): **`views.list_documents`** returns every
   stored document as the `DocumentView` read model (through the aggregate), and
   **`views.get_document_summary`** serves the summary from the denormalized `summaries`
@@ -712,3 +726,4 @@ references a decision made later.
 - [ADR-029 — Bounded retry for outbound HTTP](adr/029-bounded-retry-for-outbound-http.md)
 - [ADR-030 — Retrying a failed document](adr/030-retrying-a-failed-document.md)
 - [ADR-031 — Per-chapter summary checkpointing](adr/031-per-chapter-summary-checkpointing.md)
+- [ADR-032 — Resuming and redoing a stage](adr/032-resuming-and-redoing-a-stage.md)
