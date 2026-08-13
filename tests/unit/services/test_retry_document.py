@@ -42,7 +42,7 @@ async def _saved(uow_factory, status: DocumentStatus) -> Document:
 
 
 class TestRetryDocument:
-    async def test_a_failed_document_returns_to_uploaded(self):
+    async def test_a_failed_document_with_no_chapters_returns_to_uploaded(self):
         uow_factory = make_in_memory_uow_factory()
         document = await _saved(uow_factory, DocumentStatus.FAILED)
 
@@ -53,6 +53,25 @@ class TestRetryDocument:
         async with uow_factory() as uow:
             retried = await uow.documents.find_by_id(document.id)
         assert retried.status is DocumentStatus.UPLOADED
+
+    async def test_a_failed_document_with_chapters_resumes_at_extracted(self):
+        # The chapter rows commit with mark_extracted, so their presence is the record
+        # that extraction finished — the handler reads it and skips that stage (ADR-032).
+        uow_factory = make_in_memory_uow_factory()
+        document = await _saved(uow_factory, DocumentStatus.FAILED)
+        async with uow_factory() as uow:
+            await uow.chapters.save(document.id, ["Intro", "Body"])
+            await uow.commit()
+        enqueued: list[DocumentId] = []
+
+        await _bus(uow_factory, enqueued).handle(
+            commands.RetryDocument(document_id=document.id)
+        )
+
+        async with uow_factory() as uow:
+            retried = await uow.documents.find_by_id(document.id)
+        assert retried.status is DocumentStatus.EXTRACTED
+        assert enqueued == [document.id]  # still reaches the queue, one stage further on
 
     async def test_the_retry_reaches_the_queue(self):
         # The point of the slice: the status reset alone would sit there, since nothing

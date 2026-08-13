@@ -12,6 +12,7 @@ from cicero.domain.document.events import (
     DocumentRetried,
     DocumentUploaded,
     ExtractionCompleted,
+    SummariesDiscarded,
 )
 from cicero.domain.document.exceptions import (
     DocumentNotRetryable,
@@ -158,22 +159,32 @@ class TestDocumentStatusLifecycle:
 
 
 class TestDocumentRetry:
-    def test_retry_returns_a_failed_document_to_the_start(self):
-        # FAILED does not record where it happened, so the re-drive restarts the spine;
-        # deterministic keys make that an overwrite, never a duplicate (ADR-030).
+    def test_retry_returns_a_document_that_extracted_nothing_to_the_start(self):
+        # Nothing completed, so the re-drive restarts the spine; deterministic keys
+        # make that an overwrite, never a duplicate (ADR-030).
         doc = Document.create("Any Title")
         doc.mark_failed()
 
-        doc.retry()
+        doc.retry(extraction_complete=False)
 
         assert doc.status is DocumentStatus.UPLOADED
+
+    def test_retry_resumes_at_extracted_when_extraction_completed(self):
+        # The furthest completed stage is the resume point: re-extracting a source that
+        # already yielded its chapters is minutes spent to reproduce them (ADR-032).
+        doc = Document.create("Any Title")
+        doc.mark_failed()
+
+        doc.retry(extraction_complete=True)
+
+        assert doc.status is DocumentStatus.EXTRACTED
 
     def test_retry_records_a_document_retried_event(self):
         doc = Document.create("Any Title")
         doc.mark_failed()
         doc.collect_events()
 
-        doc.retry()
+        doc.retry(extraction_complete=False)
 
         assert doc.events == [DocumentRetried(document_id=doc.id)]
 
@@ -194,7 +205,7 @@ class TestDocumentRetry:
         doc.status = status
 
         with pytest.raises(DocumentNotRetryable):
-            doc.retry()
+            doc.retry(extraction_complete=False)
 
     def test_a_refused_retry_leaves_the_status_and_events_alone(self):
         doc = Document.create("Any Title")
@@ -202,9 +213,60 @@ class TestDocumentRetry:
         doc.collect_events()
 
         with pytest.raises(DocumentNotRetryable):
-            doc.retry()
+            doc.retry(extraction_complete=True)
 
         assert doc.status is DocumentStatus.SUMMARISED
+        assert doc.events == []
+
+
+class TestDocumentResummarise:
+    def test_a_summarised_document_goes_back_to_extracted(self):
+        # One stage back, not to the start: the chapters are what summarisation
+        # consumes, and they are still there (ADR-032).
+        doc = Document.create("Any Title")
+        doc.mark_summarised()
+
+        doc.resummarise()
+
+        assert doc.status is DocumentStatus.EXTRACTED
+
+    def test_resummarise_records_a_summaries_discarded_event(self):
+        doc = Document.create("Any Title")
+        doc.mark_summarised()
+        doc.collect_events()
+
+        doc.resummarise()
+
+        assert doc.events == [SummariesDiscarded(document_id=doc.id)]
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            DocumentStatus.UPLOADED,
+            DocumentStatus.EXTRACTING,
+            DocumentStatus.EXTRACTED,
+            DocumentStatus.SUMMARISING,
+            DocumentStatus.FAILED,
+        ],
+    )
+    def test_resummarising_anything_but_a_summarised_document_is_refused(self, status):
+        # Guarded like retry, and for the same reason: a person issues it. FAILED is
+        # refused too — that one is retry's, and it resumes rather than redoes.
+        doc = Document.create("Any Title")
+        doc.status = status
+
+        with pytest.raises(DocumentNotRetryable):
+            doc.resummarise()
+
+    def test_a_refused_resummarise_leaves_the_status_and_events_alone(self):
+        doc = Document.create("Any Title")
+        doc.mark_extracted()
+        doc.collect_events()
+
+        with pytest.raises(DocumentNotRetryable):
+            doc.resummarise()
+
+        assert doc.status is DocumentStatus.EXTRACTED
         assert doc.events == []
 
 

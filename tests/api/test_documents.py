@@ -215,6 +215,55 @@ class TestRetryDocument:
         assert response.status_code == 404
 
 
+def _seed_summarised(client: TestClient) -> Document:
+    """A SUMMARISED document with a summary per chapter — the state an operator asks to
+    have redone after changing the model or the prompt (ADR-032)."""
+    uow_factory = client.app.dependency_overrides[get_uow_factory]()
+
+    async def seed() -> Document:
+        document = Document.create("Clean Code")
+        document.mark_extracted()
+        document.mark_summarised()
+        async with uow_factory() as uow:
+            await uow.documents.save(document)
+            await uow.chapters.save(document.id, ["Intro"])
+            await uow.summaries.save(document.id, 0, "The old summary.")
+            await uow.commit()
+        return document
+
+    return asyncio.run(seed())
+
+
+class TestResummariseDocument:
+    def test_resummarise_sends_a_summarised_document_back_to_extracted(self):
+        client = _client()
+        document = _seed_summarised(client)
+
+        response = client.post(f"/api/documents/{document.id.value}/resummarise")
+
+        assert response.status_code == 202
+        assert response.json()["status"] == DocumentStatus.EXTRACTED.value
+        # The summary is gone from the read side, not merely queued for replacement.
+        assert client.get(f"/api/documents/{document.id.value}/summary").status_code == 404
+
+    def test_resummarising_a_document_that_is_not_summarised_returns_409(self):
+        client = _client()
+        created = client.post(
+            "/api/documents", data={"title": "Clean Code"}, files={"file": _PDF}
+        ).json()
+
+        response = client.post(f"/api/documents/{created['id']}/resummarise")
+
+        assert response.status_code == 409
+
+    def test_resummarise_unknown_id_returns_404(self):
+        client = _client()
+
+        response = client.post(f"/api/documents/{uuid.uuid4()}/resummarise")
+
+        assert response.status_code == 404
+
+
 class TestListDocuments:
     def test_get_returns_empty_list_when_no_documents(self):
         client = _client()
