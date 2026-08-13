@@ -2,6 +2,10 @@
 
 **Status:** Accepted
 
+> Partly superseded by [ADR-031](031-per-chapter-summary-checkpointing.md): the
+> projection now commits a chapter at a time rather than with `mark_summarised()`, so
+> `SUMMARISED` ⇔ readable no longer holds. Everything else below stands.
+
 > Builds on [ADR-014](014-status-driven-pipeline-advance.md) (status names the
 > stage; `SUMMARISING`/`SUMMARISED` were reserved there) and
 > [ADR-015](015-cqrs-read-side.md) (reads bypass the bus; denormalized read models
